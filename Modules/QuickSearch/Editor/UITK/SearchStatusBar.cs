@@ -60,7 +60,7 @@ namespace UnityEditor.Search
                 Add(m_PrefButton);
             }
 
-            m_SpinnerButton = CreateButton("SearchInProgressButton", GUIContent.none , () => {}, baseIconButtonClassName);
+            m_SpinnerButton = CreateButton("SearchInProgressButton", GUIContent.none , () => {}, baseIconLabelClassName);
             m_SpinnerButton.binding = new SearchProgressBinding(m_ViewModel, m_SpinnerButton);
             Add(m_SpinnerButton);
 
@@ -139,8 +139,7 @@ namespace UnityEditor.Search
         private void SetItemSize(float itemSize)
         {
             m_ViewModel.itemIconSize = itemSize;
-            if (!viewState.forceViewMode)
-                SearchSettings.itemIconSize = itemSize;
+            SearchSettings.itemIconSize = itemSize;
             UpdateItemSizeSlider(itemSize);
             UpdateSelectedItemSizeButton();
         }

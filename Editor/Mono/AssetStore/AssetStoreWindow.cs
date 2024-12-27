@@ -29,7 +29,7 @@ namespace UnityEditor
             }
         }
 
-        [MenuItem("Window/Asset Store", false, 1497)]
+        [MenuItem("Window/Package Management/Asset Store", false, 2000)]
         public static void OpenAssetStoreInBrowser()
         {
             string assetStoreUrl = UnityConnect.instance.GetConfigurationURL(CloudConfigUrl.CloudAssetStoreUrl);
@@ -39,10 +39,10 @@ namespace UnityEditor
             else Application.OpenURL(assetStoreUrl);
         }
 
-        [MenuItem("Window/My Assets", false, 1498)]
+        [MenuItem("Window/Package Management/My Assets", false, 1501)]
         public static void OpenMyAssetsInPackageManager()
         {
-            PackageManagerWindow.SelectPackageAndPageStatic(pageId: PackageManager.UI.Internal.MyAssetsPage.k_Id);
+            PackageManagerWindow.OpenAndSelectPage(PackageManager.UI.Internal.MyAssetsPage.k_Id);
         }
 
         public void OnEnable()
@@ -100,7 +100,7 @@ namespace UnityEditor
 
         private void OnLaunchPackageManagerButtonClicked()
         {
-            PackageManagerWindow.OpenPackageManager(null);
+            PackageManagerWindow.OpenAndSelectPackage(null);
         }
 
         private void SetMinMaxSizes()

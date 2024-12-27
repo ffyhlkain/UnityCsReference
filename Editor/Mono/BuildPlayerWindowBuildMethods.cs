@@ -74,7 +74,8 @@ namespace UnityEditor
         /// <param name="defaultBuildOptions"></param>
         internal static void CallBuildMethods(bool askForBuildLocation, BuildOptions defaultBuildOptions)
         {
-            if (EditorCompilationInterface.IsCompiling())
+            EditorCompilationInterface.IsCompiling(out var isCompiling);
+            if (isCompiling)
             {
                 Debug.LogWarning("Cannot build player while editor is compiling scripts.");
                 return;
@@ -341,7 +342,7 @@ namespace UnityEditor
                     {
                         isValidPath = true;
                     }
-                    else if (!EditorUtility.DisplayDialog("Invalid build path", msg, "Ok", "Cancel"))
+                    else if (!EditorUtility.DisplayDialog("Invalid build path", msg, "OK", "Cancel"))
                     {
                         Debug.LogError($"Invalid build path: '{path}'. {msg}");
                         return false;

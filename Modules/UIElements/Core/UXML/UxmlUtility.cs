@@ -13,6 +13,8 @@ namespace UnityEngine.UIElements
     [VisibleToOtherModules("UnityEditor.UIBuilderModule")]
     internal static class UxmlUtility
     {
+        const string s_CommaEncoded = "%2C";
+
         public static List<string> ParseStringListAttribute(string itemList)
         {
             if (string.IsNullOrEmpty(itemList?.Trim()))
@@ -33,6 +35,16 @@ namespace UnityEngine.UIElements
             }
 
             return null;
+        }
+
+        public static string EncodeListItem(string item)
+        {
+            return item.Replace(",", s_CommaEncoded);
+        }
+
+        public static string DecodeListItem(string item)
+        {
+            return item.Replace(s_CommaEncoded, ",");
         }
 
         public static void MoveListItem(IList list, int src, int dst)
@@ -137,16 +149,16 @@ namespace UnityEngine.UIElements
             return $"{value.FullName}, {value.Assembly.GetName().Name}";
         }
 
-        public static string ValueToString(Bounds value) => $"{value.center.x},{value.center.y},{value.center.z},{value.size.x},{value.size.y},{value.size.z}";
-        public static string ValueToString(BoundsInt value) => $"{value.position.x},{value.position.y},{value.position.z},{value.size.x},{value.size.y},{value.size.z}";
-        public static string ValueToString(Rect value) => $"{value.x},{value.y},{value.width},{value.height}";
-        public static string ValueToString(RectInt value) => $"{value.x},{value.y},{value.width},{value.height}";
-        public static string ValueToString(Vector2 value) => $"{value.x},{value.y}";
-        public static string ValueToString(Vector2Int value) => $"{value.x},{value.y}";
-        public static string ValueToString(Vector3 value) => $"{value.x},{value.y},{value.z}";
-        public static string ValueToString(Vector3Int value) => $"{value.x},{value.y},{value.z}";
-        public static string ValueToString(Vector4 value) => $"{value.x},{value.y},{value.z},{value.w}";
-              
+        public static string ValueToString(Bounds value) => FormattableString.Invariant($"{value.center.x},{value.center.y},{value.center.z},{value.size.x},{value.size.y},{value.size.z}");
+        public static string ValueToString(BoundsInt value) => FormattableString.Invariant($"{value.position.x},{value.position.y},{value.position.z},{value.size.x},{value.size.y},{value.size.z}");
+        public static string ValueToString(Rect value) => FormattableString.Invariant($"{value.x},{value.y},{value.width},{value.height}");
+        public static string ValueToString(RectInt value) => FormattableString.Invariant($"{value.x},{value.y},{value.width},{value.height}");
+        public static string ValueToString(Vector2 value) => FormattableString.Invariant($"{value.x},{value.y}");
+        public static string ValueToString(Vector2Int value) => FormattableString.Invariant($"{value.x},{value.y}");
+        public static string ValueToString(Vector3 value) => FormattableString.Invariant($"{value.x},{value.y},{value.z}");
+        public static string ValueToString(Vector3Int value) => FormattableString.Invariant($"{value.x},{value.y},{value.z}");
+        public static string ValueToString(Vector4 value) => FormattableString.Invariant($"{value.x},{value.y},{value.z},{value.w}");
+
         public static object CloneObject(object value)
         {
             if (value != null &&

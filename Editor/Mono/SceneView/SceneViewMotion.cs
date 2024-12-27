@@ -11,19 +11,19 @@ namespace UnityEditor
 {
     class SceneViewMotion
     {
-        const string k_TemporaryPanTool2D1 = "Scene View/Temporary Pan Tool for 2D Mode 1";
-        const string k_TemporaryPanTool2D2 = "Scene View/Temporary Pan Tool for 2D Mode 2";
-        const string k_TemporaryPanTool1 = "Scene View/Temporary Pan Tool 1";
-        const string k_TemporaryPanTool2 = "Scene View/Temporary Pan Tool 2";
-        const string k_TemporaryPanTool3 = "Scene View/Temporary Pan Tool 3";
-        const string k_TemporaryPanTool4 = "Scene View/Temporary Pan Tool 4";
-        const string k_TemporaryZoomTool1 = "Scene View/Temporary Zoom Tool 1";
-        const string k_TemporaryZoomTool2 = "Scene View/Temporary Zoom Tool 2";
-        const string k_TemporaryOrbitTool = "Scene View/Temporary Orbit Tool";
-        const string k_TemporaryFpsTool = "Scene View/Temporary FPS Tool";
-        const string k_PanFocusTool = "Scene View/Pan Focus Tool";
-        const string k_LockedPanTool = "Scene View/Locked Pan Tool";
-        const string k_LockedPanFocusTool = "Scene View/Locked Pan Focus Tool";
+        const string k_TemporaryPanTool2D1 = "Scene View/2D Pan 1";
+        const string k_TemporaryPanTool2D2 = "Scene View/2D Pan 2";
+        const string k_TemporaryPanTool1 = "Scene View/Pan 1";
+        const string k_TemporaryPanTool2 = "Scene View/Pan 2";
+        const string k_TemporaryPanTool3 = "Scene View/Pan 3";
+        const string k_TemporaryPanTool4 = "Scene View/Pan 4";
+        const string k_TemporaryZoomTool1 = "Scene View/Zoom 1";
+        const string k_TemporaryZoomTool2 = "Scene View/Zoom 2";
+        const string k_TemporaryOrbitTool = "Scene View/Orbit";
+        const string k_TemporaryFpsTool = "Scene View/FPS Look";
+        const string k_PanFocusTool = "Scene View/Focus";
+        const string k_LockedPanTool = "Scene View/Pan (Locked)";
+        const string k_LockedPanFocusTool = "Scene View/Focus (Locked)";
 
         const string k_PanFocusEventCommandName = "SceneViewPanFocusEventCommand";
         internal const string k_SetSceneViewMotionHotControlEventCommandName = "SetSceneViewMotionHotControlEventCommand"; // Also used in tests.
@@ -31,6 +31,11 @@ namespace UnityEditor
         bool m_Moving;
         public bool viewportsUnderMouse { get; set; }
         static readonly CameraFlyModeContext s_CameraFlyModeContext = new CameraFlyModeContext();
+
+        readonly SceneViewViewport m_SceneViewViewportContext = new SceneViewViewport();
+        readonly SceneViewViewport2D m_SceneViewViewport2DContext = new SceneViewViewport2D();
+        readonly SceneViewViewport3D m_SceneViewViewport3DContext = new SceneViewViewport3D();
+        readonly SceneViewViewportLockedPanTool m_SceneViewViewportLockedPanToolContext = new SceneViewViewportLockedPanTool();
 
         // used by Tests/EditModeAndPlayModeTests/SceneView/CameraFlyModeContextTests
         internal AnimVector3 m_FlySpeed = new AnimVector3(Vector3.zero);
@@ -67,15 +72,23 @@ namespace UnityEditor
         static bool s_ViewToolIsActive = false;
         public static bool viewToolIsActive => UpdateViewToolState();
 
-        [InitializeOnLoadMethod]
-        static void RegisterShortcutContexts() => EditorApplication.delayCall += () =>
+        public void RegisterShortcutContexts()
         {
-            ShortcutIntegration.instance.contextManager.RegisterToolContext(new SceneViewViewport());
-            ShortcutIntegration.instance.contextManager.RegisterToolContext(new SceneViewViewport2D());
-            ShortcutIntegration.instance.contextManager.RegisterToolContext(new SceneViewViewport3D());
-            ShortcutIntegration.instance.contextManager.RegisterToolContext(new SceneViewViewportLockedPanTool());
+            ShortcutIntegration.instance.contextManager.RegisterToolContext(m_SceneViewViewportContext);
+            ShortcutIntegration.instance.contextManager.RegisterToolContext(m_SceneViewViewport2DContext);
+            ShortcutIntegration.instance.contextManager.RegisterToolContext(m_SceneViewViewport3DContext);
+            ShortcutIntegration.instance.contextManager.RegisterToolContext(m_SceneViewViewportLockedPanToolContext);
             ShortcutIntegration.instance.contextManager.RegisterToolContext(s_CameraFlyModeContext);
-        };
+        }
+
+        public void UnregisterShortcutContexts()
+        {
+            ShortcutIntegration.instance.contextManager.DeregisterToolContext(m_SceneViewViewportContext);
+            ShortcutIntegration.instance.contextManager.DeregisterToolContext(m_SceneViewViewport2DContext);
+            ShortcutIntegration.instance.contextManager.DeregisterToolContext(m_SceneViewViewport3DContext);
+            ShortcutIntegration.instance.contextManager.DeregisterToolContext(m_SceneViewViewportLockedPanToolContext);
+            ShortcutIntegration.instance.contextManager.DeregisterToolContext(s_CameraFlyModeContext);
+        }
 
         internal abstract class SceneViewContext : IShortcutContext
         {
@@ -86,27 +99,31 @@ namespace UnityEditor
         }
 
         [ReserveModifiers(ShortcutModifiers.Shift)]
-        internal class SceneViewViewport : SceneViewContext
+        internal class SceneViewViewport : SceneViewContext, IHelperBarShortcutContext
         {
             public override bool active => ViewHasFocusAndViewportUnderMouse;
+            public bool helperBarActive => base.active;
         }
 
         [ReserveModifiers(ShortcutModifiers.Shift)]
-        class SceneViewViewport2D : SceneViewContext
+        class SceneViewViewport2D : SceneViewContext, IHelperBarShortcutContext
         {
             public override bool active => ViewHasFocusAndViewportUnderMouse && (window.in2DMode || window.isRotationLocked);
+            public bool helperBarActive => base.active && (window.in2DMode || window.isRotationLocked);
         }
 
         [ReserveModifiers(ShortcutModifiers.Shift)]
-        class SceneViewViewport3D : SceneViewContext
+        class SceneViewViewport3D : SceneViewContext, IHelperBarShortcutContext
         {
             public override bool active => ViewHasFocusAndViewportUnderMouse && !window.in2DMode && !window.isRotationLocked;
+            public bool helperBarActive => base.active && !window.in2DMode && !window.isRotationLocked;
         }
 
         [ReserveModifiers(ShortcutModifiers.Shift)]
-        class SceneViewViewportLockedPanTool : SceneViewContext
+        class SceneViewViewportLockedPanTool : SceneViewContext, IHelperBarShortcutContext
         {
-            public override bool active => ViewHasFocusAndViewportUnderMouse&& Tools.current == Tool.View;
+            public override bool active => ViewHasFocusAndViewportUnderMouse && Tools.current == Tool.View;
+            public bool helperBarActive => base.active && Tools.current == Tool.View;
         }
 
         [Shortcut(k_PanFocusTool, typeof(SceneViewViewport), KeyCode.Mouse2)]
@@ -288,7 +305,6 @@ namespace UnityEditor
             Tools.s_LockedViewTool = ViewTool.None;
             GUIUtility.hotControl = 0;
 
-
             if (viewToolActiveChanged != null)
                 viewToolActiveChanged.Invoke();
 
@@ -302,19 +318,21 @@ namespace UnityEditor
             m_Drag = false;
         }
 
-        public void DoViewTool()
+        // onGUIView is the SceneView currently receiving GUI event. It is not necesarily the currently
+        // last focused view as that's retrieved from SceneView.lastActiveSceneView.
+        public void DoViewTool(SceneView onGUIView)
         {
-            var view = SceneView.lastActiveSceneView;
-            if (view == null)
+            var lastFocusedView = SceneView.lastActiveSceneView;
+            if (lastFocusedView == null)
                 return;
 
             // In FPS mode we update the pivot for Orbit mode (see below and inside HandleMouseDrag)
             if (Tools.s_LockedViewTool == ViewTool.FPS)
-                view.FixNegativeSize();
+                lastFocusedView.FixNegativeSize();
 
             SceneNavigationInput.Update();
             if (SceneNavigationInput.moving)
-                view.viewIsLockedToObject = false;
+                lastFocusedView.viewIsLockedToObject = false;
             m_Motion = SceneNavigationInput.currentInputVector;
 
             // If a different mouse button is clicked while the current mouse button is held down,
@@ -327,7 +345,9 @@ namespace UnityEditor
             {
                 case EventType.ScrollWheel:
                     // Default to zooming to mouse position in 2D mode without alt.
-                    HandleScrollWheel(view, view.in2DMode == evt.alt);
+                    // We pass onGUIView instead of lastFocusedView, because scrolling while hovering over an unfocused
+                    // must still trigger zoom on that view (and not the last focused one).
+                    HandleScrollWheel(onGUIView, lastFocusedView.in2DMode == evt.alt);
                     break;
                 case EventType.MouseDown:
                     if (GUIUtility.hotControl == 0)
@@ -341,19 +361,19 @@ namespace UnityEditor
                     HandleKeyDown();
                     break;
                 case EventType.MouseDrag:
-                    HandleMouseDrag(view);
+                    HandleMouseDrag(lastFocusedView);
                     break;
                 case EventType.Layout:
                     if (GUIUtility.hotControl == k_ViewToolID || m_FlySpeed.isAnimating || m_Moving)
                     {
-                        view.pivot = view.pivot + view.rotation * GetMovementDirection(view);
-                        view.Repaint();
+                        lastFocusedView.pivot = lastFocusedView.pivot + lastFocusedView.rotation * GetMovementDirection(lastFocusedView);
+                        lastFocusedView.Repaint();
                     }
                     break;
                 case EventType.ExecuteCommand:
                     if (evt.commandName == k_PanFocusEventCommandName)
                     {
-                        PanFocus(m_StartMousePosition, view, evt);
+                        PanFocus(m_StartMousePosition, lastFocusedView, evt);
                     }
                     else if (evt.commandName == k_SetSceneViewMotionHotControlEventCommandName)
                     {
@@ -507,8 +527,7 @@ namespace UnityEditor
                         if (!view.in2DMode && !view.isRotationLocked)
                         {
                             OrbitCameraBehavior(view);
-                            // todo gizmo update label
-                            // view.m_OrientationGizmo.UpdateGizmoLabel(view, view.rotation * Vector3.forward, view.m_Ortho.target);
+                            view.UpdateOrientationGizmos();
                         }
                     }
                     break;
@@ -542,8 +561,7 @@ namespace UnityEditor
                                 OrbitCameraBehavior(view);
                             }
 
-                            // todo gizmo update label
-                            // view.m_OrientationGizmo.UpdateGizmoLabel(view, view.rotation * Vector3.forward, view.m_Ortho.target);
+                            view.UpdateOrientationGizmos();
                         }
                     }
                     break;
@@ -648,7 +666,7 @@ namespace UnityEditor
                 if ((evt.modifiers & EventModifiers.Shift) != 0 &&
                     (Application.platform == RuntimePlatform.OSXEditor || Application.platform == RuntimePlatform.WindowsEditor))
                     scrollDelta = Event.current.delta.x;
-                
+
                 float scrollWheelDelta = scrollDelta * m_FPSScrollWheelMultiplier;
                 view.cameraSettings.speedNormalized -= scrollWheelDelta;
                 float cameraSettingsSpeed = view.cameraSettings.speed;

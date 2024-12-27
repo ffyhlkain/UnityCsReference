@@ -18,7 +18,7 @@ namespace UnityEditor.PackageManager.UI
     /// </summary>
     public static class Window
     {
-        [MenuItem("Window/Package Manager", priority = 1500)]
+        [MenuItem("Window/Package Management/Package Manager", priority = 1500)]
         internal static void ShowPackageManagerWindow(MenuCommand item)
         {
             Open(item.context?.name);
@@ -38,22 +38,7 @@ namespace UnityEditor.PackageManager.UI
         /// <param name="packageToSelect">packageToSelect can be identified by packageName, displayName, packageId, productId or null</param>
         public static void Open(string packageToSelect)
         {
-            PackageManagerWindow.OpenPackageManager(packageToSelect);
-        }
-
-        /// <summary>
-        /// Open Package Manager Window and select specified page.
-        /// The string used to identify the page can be any of the following:
-        /// <list type="bullet">
-        /// <item><description>Basic pages including "UnityRegistry", "BuiltIn", "InProject", "MyRegistries", and "MyAssets"</description></item>
-        /// <item><description>Extension pages with id that looks like "Extension/id", where "id" is the unique string id for the extension</description></item>
-        /// <item><description>null (no specific page to focus)</description></item>
-        /// </list>
-        /// </summary>
-        /// <param name="pageIdToSelect">Page Id to select. If page cannot be found, last selected page will be selected</param>
-        internal static void OpenPage(string pageIdToSelect)
-        {
-            PackageManagerWindow.OpenPackageManagerOnPage(pageIdToSelect);
+            PackageManagerWindow.OpenAndSelectPackage(packageToSelect);
         }
     }
 
@@ -63,7 +48,6 @@ namespace UnityEditor.PackageManager.UI
         internal static PackageManagerWindow instance { get; private set; }
 
         private PackageManagerWindowRoot m_Root;
-        private ScrollView m_ScrollView;
 
         internal const string k_UpmUrl = "com.unity3d.kharma:upmpackage/";
 
@@ -76,7 +60,7 @@ namespace UnityEditor.PackageManager.UI
 
             titleContent = GetLocalizedTitleContent();
 
-            minSize = new Vector2(1050, 250);
+            minSize = new Vector2(748, 250);
             BuildGUI();
 
             Events.registeredPackages += OnRegisteredPackages;
@@ -91,29 +75,20 @@ namespace UnityEditor.PackageManager.UI
             var packageManagerPrefs = container.Resolve<IPackageManagerPrefs>();
             var packageDatabase = container.Resolve<IPackageDatabase>();
             var pageManager = container.Resolve<IPageManager>();
-            var settingsProxy = container.Resolve<IProjectSettingsProxy>();
             var unityConnectProxy = container.Resolve<IUnityConnectProxy>();
             var applicationProxy = container.Resolve<IApplicationProxy>();
             var upmClient = container.Resolve<IUpmClient>();
             var assetStoreCachePathProxy = container.Resolve<IAssetStoreCachePathProxy>();
             var pageRefreshHandler = container.Resolve<IPageRefreshHandler>();
+            var operationDispatcher = container.Resolve<IPackageOperationDispatcher>();
+            var delayedSelectionHandler = container.Resolve<IDelayedSelectionHandler>();
 
             // Adding the ScrollView object here because it really need to be the first child under rootVisualElement for it to work properly.
-            // Since the StyleSheet is added to PackageManagerRoot, the css is exceptionally added directly to the object
-            m_ScrollView = new ScrollView
-            {
-                mode = ScrollViewMode.Horizontal,
-                style =
-                {
-                    flexGrow = 1
-                }
-            };
-            m_Root = new PackageManagerWindowRoot(resourceLoader, extensionManager, selection, packageManagerPrefs, packageDatabase, pageManager, settingsProxy, unityConnectProxy, applicationProxy, upmClient, assetStoreCachePathProxy, pageRefreshHandler);
+            m_Root = new PackageManagerWindowRoot(resourceLoader, extensionManager, selection, packageManagerPrefs, packageDatabase, pageManager, unityConnectProxy, applicationProxy, upmClient, assetStoreCachePathProxy, pageRefreshHandler, operationDispatcher, delayedSelectionHandler);
             try
             {
                 m_Root.OnEnable();
-                rootVisualElement.Add(m_ScrollView);
-                m_ScrollView.Add(m_Root);
+                rootVisualElement.Add(m_Root);
             }
             catch (ResourceLoaderException)
             {
@@ -193,6 +168,14 @@ namespace UnityEditor.PackageManager.UI
             m_Root?.OnLostFocus();
         }
 
+        internal Rect CalculateDropdownPosition(VisualElement anchorElement)
+        {
+            // If a background GUI painted before, the coordinates got could be different.
+            // Repaint the package manager to ensure the coordinates retrieved is from Package Manager Window.
+            RepaintImmediately();
+            return GUIUtility.GUIToScreenRect(anchorElement.worldBound);
+        }
+
         [UsedByNativeCode]
         internal static void OpenURL(string url)
         {
@@ -203,7 +186,7 @@ namespace UnityEditor.PackageManager.UI
             // com.unity3d.kharma:upmpackage/com.unity.xxx@1.2.2      => Upm url
             if (url.StartsWith(k_UpmUrl))
             {
-                SelectPackageAndPageStatic(pageId: InProjectPage.k_Id);
+                SelectPageStatic(pageId: InProjectPage.k_Id);
                 EditorApplication.delayCall += () => OpenAddPackageByName(url);
             }
             else
@@ -216,7 +199,7 @@ namespace UnityEditor.PackageManager.UI
                     if (endIndex > 0)
                         id = id.Substring(0, endIndex);
 
-                    SelectPackageAndPageStatic(id, MyAssetsPage.k_Id);
+                    SelectPackageStatic(id, MyAssetsPage.k_Id);
                 }
             }
         }
@@ -228,35 +211,35 @@ namespace UnityEditor.PackageManager.UI
                 EditorApplication.delayCall += () => OpenAddPackageByName(url);
                 return;
             }
+
             instance.Focus();
             instance.m_Root.OpenAddPackageByNameDropdown(url, instance);
         }
 
         [UsedByNativeCode]
-        internal static void OpenPackageManager(string packageToSelect)
+        internal static void OpenAndSelectPackage(string packageToSelect, string pageId = null)
         {
             var isWindowAlreadyVisible = Resources.FindObjectsOfTypeAll<PackageManagerWindow>()?.FirstOrDefault() != null;
 
-            SelectPackageAndPageStatic(packageToSelect);
-            if (!isWindowAlreadyVisible)
-            {
-                string packageId = null;
-                if (!string.IsNullOrEmpty(packageToSelect))
-                {
-                    var packageDatabase = ServicesContainer.instance.Resolve<IPackageDatabase>();
-                    packageDatabase.GetPackageAndVersionByIdOrName(packageToSelect, out var package, out var version, true);
+            SelectPackageStatic(packageToSelect, pageId);
+            if (isWindowAlreadyVisible)
+                return;
 
-                    packageId = version?.uniqueId ?? package?.versions.primary.uniqueId ?? string.Format("{0}@primary", packageToSelect);
-                }
-                PackageManagerWindowAnalytics.SendEvent("openWindow", packageId);
+            string packageId = null;
+            if (!string.IsNullOrEmpty(packageToSelect))
+            {
+                var packageDatabase = ServicesContainer.instance.Resolve<IPackageDatabase>();
+                packageDatabase.GetPackageAndVersionByIdOrName(packageToSelect, out var package, out var version, true);
+                packageId = version?.uniqueId ?? package?.versions.primary.uniqueId ?? $"{packageToSelect}@primary";
             }
+            PackageManagerWindowAnalytics.SendEvent("openWindow", packageId);
         }
 
-        internal static void OpenPackageManagerOnPage(string pageId)
+        internal static void OpenAndSelectPage(string pageId, string searchText = null)
         {
             var isWindowAlreadyVisible = Resources.FindObjectsOfTypeAll<PackageManagerWindow>()?.FirstOrDefault() != null;
 
-            SelectPackageAndPageStatic(pageId: pageId);
+            SelectPageStatic(pageId, searchText);
             if (!isWindowAlreadyVisible)
                 PackageManagerWindowAnalytics.SendEvent("openWindowOnFilter", pageId);
         }
@@ -268,7 +251,7 @@ namespace UnityEditor.PackageManager.UI
             packageDatabase?.ClearSamplesCache();
 
             var applicationProxy = ServicesContainer.instance.Resolve<IApplicationProxy>();
-            if (applicationProxy.isBatchMode)
+            if (applicationProxy.isBatchMode || !applicationProxy.isUpmRunning)
                 return;
 
             var upmRegistryClient = ServicesContainer.instance.Resolve<IUpmRegistryClient>();
@@ -308,24 +291,33 @@ namespace UnityEditor.PackageManager.UI
             pageRefreshHandler.Refresh(RefreshOptions.UpmListOffline);
         }
 
-        internal static void SelectPackageAndPageStatic(string packageToSelect = null, string pageId = null, bool refresh = false, string searchText = "")
+        private static void SelectPackageStatic(string packageToSelect = null, string pageId = null)
         {
-            instance = GetWindow<PackageManagerWindow>();
-            instance.minSize = new Vector2(1050, 250);
-            instance.m_Root.SelectPackageAndPage(packageToSelect, pageId, refresh, searchText);
-            instance.Show();
+            // We want to make sure the window is shown first, otherwise our package and page selection
+            // might get overriden by page selection in the window initialization code
+            ShowWindow();
+
+            // We use DelayedSelectionHandler to handle the case where the package is not yet available when the
+            // selection is set. That could happen when we want to open Package Manager and select a package, but
+            // the refresh call is not yet finished. It could also happen when we create a package and the newly
+            // crated package is not yet in the database until after package resolution.
+            ServicesContainer.instance.Resolve<IDelayedSelectionHandler>().SelectPackage(packageToSelect, pageId);
         }
 
-        internal static void CloseAll()
+        private static void SelectPageStatic(string pageId = null, string searchText = "")
         {
-            var windows = Resources.FindObjectsOfTypeAll<PackageManagerWindow>();
-            if (windows == null)
-                return;
+            // We want to make sure the window is shown first, otherwise our package and page selection
+            // might get overriden by page selection in the window initialization code
+            ShowWindow();
 
-            foreach (var window in windows)
-                window.Close();
+            ServicesContainer.instance.Resolve<IDelayedSelectionHandler>().SelectPage(pageId, searchText);
+        }
 
-            instance = null;
+        private static void ShowWindow()
+        {
+            instance = GetWindow<PackageManagerWindow>();
+            instance.minSize = new Vector2(748, 250);
+            instance.Show();
         }
 
         private static void CheckInnerException<T>(TargetInvocationException e) where T : Exception

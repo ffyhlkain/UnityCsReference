@@ -354,7 +354,6 @@ namespace Unity.UI.Builder
             }
             else if (IsComputedStyleTransformOrigin(val) && fieldElement is TransformOriginStyleField transformOriginStyleField)
             {
-
                 transformOriginStyleField.RegisterValueChangedCallback(e => OnFieldValueChangeTransformOrigin(e, styleName));
                 if (BuilderConstants.InspectorStylePropertiesValuesTooltipsDictionary.TryGetValue(
                         string.Format(BuilderConstants.InputFieldStyleValueTooltipDictionaryKeyFormat, styleName, ""), out var styleValueTooltip))
@@ -385,6 +384,18 @@ namespace Unity.UI.Builder
                         e.rect = rotateStyleField.visualInput.GetTooltipRect();
                     });
                 }
+            }
+            else if (IsComputedStyleBackgroundRepeat(val) && fieldElement is BackgroundRepeatStyleField backgroundRepeatStyleField)
+            {
+                backgroundRepeatStyleField.RegisterValueChangedCallback(e => OnFieldValueChangeBackgroundRepeat(e, styleName));
+            }
+            else if (IsComputedStyleBackgroundSize(val) && fieldElement is BackgroundSizeStyleField backgroundSizeStyleField)
+            {
+                backgroundSizeStyleField.RegisterValueChangedCallback(e => OnFieldValueChangeBackgroundSize(e, styleName));
+            }
+            else if (IsComputedStyleBackgroundPosition(val) && fieldElement is BackgroundPositionStyleField backgroundPositionStyleField)
+            {
+                backgroundPositionStyleField.RegisterValueChangedCallback(e => OnFieldValueChangeBackgroundPosition(e, styleName));
             }
             else if (IsComputedStyleScale(val) && fieldElement is ScaleStyleField scaleStyleField)
             {
@@ -840,6 +851,33 @@ namespace Unity.UI.Builder
                 var value = GetComputedStyleRotateValue(val);
                 if (useStyleProperty)
                     value = styleSheet.GetRotate(styleProperty);
+
+                uiField.SetValueWithoutNotify(value);
+            }
+            else if (IsComputedStyleBackgroundRepeat(val) && fieldElement is BackgroundRepeatStyleField)
+            {
+                var uiField = fieldElement as BackgroundRepeatStyleField;
+                var value = GetComputedStyleBackgroundRepeatValue(val);
+                if (useStyleProperty)
+                    value = styleSheet.GetBackgroundRepeat(styleProperty);
+
+                uiField.SetValueWithoutNotify(value);
+            }
+            else if (IsComputedStyleBackgroundSize(val) && fieldElement is BackgroundSizeStyleField)
+            {
+                var uiField = fieldElement as BackgroundSizeStyleField;
+                var value = GetComputedStyleBackgroundSizeValue(val);
+                if (useStyleProperty)
+                    value = styleSheet.GetBackgroundSize(styleProperty);
+
+                uiField.SetValueWithoutNotify(value);
+            }
+            else if (IsComputedStyleBackgroundPosition(val) && fieldElement is BackgroundPositionStyleField)
+            {
+                var uiField = fieldElement as BackgroundPositionStyleField;
+                var value = GetComputedStyleBackgroundPositionValue(val);
+                if (useStyleProperty)
+                    value = styleSheet.GetBackgroundPosition(styleProperty, uiField.mode == BackgroundPositionMode.Horizontal ? BackgroundPositionKeyword.Left : BackgroundPositionKeyword.Top);
 
                 uiField.SetValueWithoutNotify(value);
             }
@@ -1514,6 +1552,51 @@ namespace Unity.UI.Builder
 
                         menu.AppendSeparator();
                     }
+
+                    var matchingSelectors = BuilderSharedStyles.GetMatchingSelectorsOnElementFromLocalStyleSheet(m_Inspector.currentVisualElement);
+                    var styleProperty = GetLastStyleProperty(currentRule, fieldValueInfo.name);
+                    var hasInlineValue = styleProperty != null;
+                    var hasAnyInlineValue = currentRule.properties.Length > 0;
+
+                    var actionName = BuilderConstants.ContextMenuExtractInlineValueMessage;
+                    if (hasInlineValue)
+                        actionName += "/" + BuilderConstants.ContextMenuNewClassMessage;
+                    menu.AppendAction(actionName, _ => OpenNewSelectorWindow(styleProperty),
+                        _ => hasInlineValue ? DropdownMenuAction.Status.Normal : DropdownMenuAction.Status.Disabled,
+                        fieldElement);
+
+                    actionName = BuilderConstants.ContextMenuExtractAllInlineValuesMessage;
+                    if (hasAnyInlineValue)
+                        actionName += "/" + BuilderConstants.ContextMenuNewClassMessage;
+                    menu.AppendAction(actionName, _ => OpenNewSelectorWindow(),
+                        _ => hasAnyInlineValue ? DropdownMenuAction.Status.Normal : DropdownMenuAction.Status.Disabled,
+                        fieldElement);
+
+                    if (matchingSelectors.Count > 0)
+                    {
+                        if (hasInlineValue) menu.AppendSeparator(BuilderConstants.ContextMenuExtractInlineValueMessage + "/");
+                        if (hasAnyInlineValue) menu.AppendSeparator(BuilderConstants.ContextMenuExtractAllInlineValuesMessage + "/");
+                    }
+
+                    foreach (var matchingSelector in matchingSelectors)
+                    {
+                        var selectorStr = StyleSheetToUss.ToUssSelector(matchingSelector.complexSelector);
+                        // replace space with Unicode character before # to avoid the shortcut handling in the menu system
+                        selectorStr = selectorStr.Replace(" #", "\u00A0#");
+
+                        if (hasInlineValue)
+                            menu.AppendAction(BuilderConstants.ContextMenuExtractInlineValueMessage + "/" + selectorStr,
+                                _ => PushLocalStylesToSelector(matchingSelector, styleProperty),
+                                _ => DropdownMenuAction.Status.Normal,
+                                fieldElement);
+
+                        if (hasAnyInlineValue)
+                            menu.AppendAction(BuilderConstants.ContextMenuExtractAllInlineValuesMessage + "/" + selectorStr,
+                                _ => PushLocalStylesToSelector(matchingSelector),
+                                _ => DropdownMenuAction.Status.Normal,
+                                fieldElement);
+
+                    }
                 }
 
                 if (isBoundToVariable)
@@ -1530,7 +1613,7 @@ namespace Unity.UI.Builder
                         menu.AppendAction(BuilderConstants.ContextMenuRemoveVariableMessage, RemoveVariableViaContextMenu,
                             (a) => DropdownMenuAction.Status.Normal, fieldElement);
                 }
-                else if (isSelector)
+                else if (isSelector && fieldElement is not BoxModelStyleField)
                 {
                     menu.AppendAction(BuilderConstants.ContextMenuSetVariableMessage, ViewVariableViaContextMenu,
                         VariableActionStatus,
@@ -1997,6 +2080,60 @@ namespace Unity.UI.Builder
             {
                 Builder.ShowWarning(BuilderConstants.CouldNotOpenSelectorMessage);
             }
+        }
+
+        void OpenNewSelectorWindow(StyleProperty styleProperty = null)
+        {
+            if (BuilderNewClassWindow.activeWindow != null)
+                BuilderNewClassWindow.activeWindow.Close();
+
+            var worldBound = GUIUtility.GUIToScreenRect(m_Inspector.document.primaryViewportWindow.viewport.worldBound);
+            var window = BuilderNewClassWindow.Open(worldBound);
+            window.OnClassCreated += (className) => ExtractLocalStylesToNewClass(styleProperty, className);
+            window.ShowModal();
+        }
+
+        void ExtractLocalStylesToNewClass(StyleProperty styleProperty, StyleComplexSelector className)
+        {
+            var classNameStr = StyleSheetToUss.ToUssSelector(className);
+            classNameStr = classNameStr.TrimStart(BuilderConstants.UssSelectorClassNameSymbol[0]);
+            // Add the new selector to the current element
+            currentVisualElement.AddToClassList(classNameStr);
+            // Update VisualTreeAsset.
+            BuilderAssetUtilities.AddStyleClassToElementInAsset(m_Inspector.document, currentVisualElement, classNameStr);
+
+            // Get Selector Match Record from the new selector
+            var selectorMatchRecord = new SelectorMatchRecord(m_Inspector.document.activeStyleSheet, 0)
+            {
+                complexSelector = className
+            };
+            PushLocalStylesToSelector(selectorMatchRecord, styleProperty);
+        }
+
+        internal void PushLocalStylesToSelector(SelectorMatchRecord matchingSelector, StyleProperty styleProperty = null)
+        {
+            // Get StyleSheet this selector belongs to.
+            var toStyleSheet = matchingSelector.sheet;
+            if (toStyleSheet == null)
+                return;
+
+            var selector = matchingSelector.complexSelector;
+
+            // Transfer property from inline styles rule to selector.
+            if (styleProperty != null)
+                toStyleSheet.TransferPropertyToSelector(selector, styleSheet, currentRule, styleProperty);
+            else
+                // Transfer all properties from inline styles rule to selector.
+                toStyleSheet.TransferRulePropertiesToSelector(selector, styleSheet, currentRule);
+
+            // Overwrite Undo Message.
+            Undo.RegisterCompleteObjectUndo(
+                new Object[] { m_Inspector.document.visualTreeAsset, toStyleSheet },
+                BuilderConstants.ContextMenuExtractInlineValueMessage);
+
+            // We actually want to get the notification back and refresh ourselves.
+            m_Inspector.selection.NotifyOfStylingChange();
+            m_Inspector.selection.NotifyOfHierarchyChange(null, m_Inspector.currentVisualElement);
         }
 
         void NotifyStyleChanges(List<string> styles = null, bool selfNotify = false, NotifyType notifyType = NotifyType.Default, bool ignoreUnsavedChanges = false)
@@ -2607,6 +2744,30 @@ namespace Unity.UI.Builder
             PostStyleFieldSteps(field, styleProperty, styleName, isNewValue);
         }
 
+        void OnFieldValueChangeBackgroundRepeat(ChangeEvent<BackgroundRepeat> e, string styleName)
+        {
+            var field = e.target as BackgroundRepeatStyleField;
+            var styleProperty = GetOrCreateStylePropertyByStyleName(styleName);
+            var isNewValue = field.OnFieldValueChange(styleProperty, styleSheet);
+            PostStyleFieldSteps(field, styleProperty, styleName, isNewValue);
+        }
+
+        void OnFieldValueChangeBackgroundSize(ChangeEvent<BackgroundSize> e, string styleName)
+        {
+            var field = e.target as BackgroundSizeStyleField;
+            var styleProperty = GetOrCreateStylePropertyByStyleName(styleName);
+            var isNewValue = field.OnFieldValueChange(styleProperty, styleSheet);
+            PostStyleFieldSteps(field, styleProperty, styleName, isNewValue);
+        }
+
+        void OnFieldValueChangeBackgroundPosition(ChangeEvent<BackgroundPosition> e, string styleName)
+        {
+            var field = e.target as BackgroundPositionStyleField;
+            var styleProperty = GetOrCreateStylePropertyByStyleName(styleName);
+            var isNewValue = field.OnFieldValueChange(styleProperty, styleSheet);
+            PostStyleFieldSteps(field, styleProperty, styleName, isNewValue);
+        }
+
         void OnFieldValueChangeScale(ChangeEvent<BuilderScale> e, string styleName)
         {
             var field = e.target as ScaleStyleField;
@@ -2762,6 +2923,21 @@ namespace Unity.UI.Builder
             return val is StyleRotate || val is Rotate || val is BuilderRotate;
         }
 
+        static public bool IsComputedStyleBackgroundRepeat(object val)
+        {
+            return val is StyleBackgroundRepeat || val is BackgroundRepeat;
+        }
+
+        static public bool IsComputedStyleBackgroundSize(object val)
+        {
+            return val is StyleBackgroundSize || val is BackgroundSize;
+        }
+
+        static public bool IsComputedStyleBackgroundPosition(object val)
+        {
+            return val is StyleBackgroundPosition || val is BackgroundPosition;
+        }
+
         static public bool IsComputedStyleScale(object val)
         {
             return val is StyleScale || val is Scale || val is BuilderScale;
@@ -2842,6 +3018,33 @@ namespace Unity.UI.Builder
 
             var style = (StyleRotate)val;
             return new BuilderRotate(style);
+        }
+
+        static public BackgroundRepeat GetComputedStyleBackgroundRepeatValue(object val)
+        {
+            if (val is BackgroundRepeat)
+                return (BackgroundRepeat)val;
+
+            var style = (StyleBackgroundRepeat)val;
+            return style.value;
+        }
+
+        static public BackgroundSize GetComputedStyleBackgroundSizeValue(object val)
+        {
+            if (val is BackgroundSize)
+                return (BackgroundSize)val;
+
+            var style = (StyleBackgroundSize)val;
+            return style.value;
+        }
+
+        static public BackgroundPosition GetComputedStyleBackgroundPositionValue(object val)
+        {
+            if (val is BackgroundPosition)
+                return (BackgroundPosition)val;
+
+            var style = (StyleBackgroundPosition)val;
+            return style.value;
         }
 
         static public BuilderScale GetComputedStyleScaleValue(object val)

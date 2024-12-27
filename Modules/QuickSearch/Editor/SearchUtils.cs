@@ -183,6 +183,11 @@ namespace UnityEditor.Search
         /// <returns>Returns the path of an object.</returns>
         public static string GetObjectPath(UnityEngine.Object obj)
         {
+            return GetObjectPath(obj, false);
+        }
+
+        internal static string GetObjectPath(UnityEngine.Object obj, bool pathAsGlobalObjectId)
+        {
             if (!obj)
                 return string.Empty;
             if (obj is Component c)
@@ -190,7 +195,7 @@ namespace UnityEditor.Search
             var assetPath = AssetDatabase.GetAssetPath(obj);
             if (!string.IsNullOrEmpty(assetPath))
             {
-                if (Utils.IsBuiltInResource(assetPath))
+                if (pathAsGlobalObjectId || Utils.IsBuiltInResource(assetPath))
                     return GlobalObjectId.GetGlobalObjectIdSlow(obj).ToString();
                 return assetPath;
             }
@@ -505,12 +510,17 @@ namespace UnityEditor.Search
             if (cacheProvider && s_GroupProviders.TryGetValue(groupId, out var groupProvider))
                 return groupProvider;
 
-            groupProvider = new SearchProvider($"_group_provider_{groupId}", groupId, templateProvider, groupPriority);
+            groupProvider = new SearchProvider(GetGroupProviderId(groupId), groupId, templateProvider, groupPriority);
 
             if (cacheProvider)
                 s_GroupProviders[groupId] = groupProvider;
 
             return groupProvider;
+        }
+
+        internal static string GetGroupProviderId(string groupId)
+        {
+            return $"_group_provider_{groupId}";
         }
 
         public static string GetAssetPath(in SearchItem item)
@@ -527,8 +537,9 @@ namespace UnityEditor.Search
         {
             if (category != null)
             {
+                // Note: since GameObject is NOT the same as prefab, we chose not to set any data and blocktype so the propsition must use the replacement text:
                 yield return new SearchProposition(category: category, label: "Prefabs", replacement: "t:prefab",
-                    icon: GetTypeIcon(typeof(GameObject)), data: typeof(GameObject), type: blockType, priority: priority, color: QueryColors.type);
+                    icon: GetTypeIcon(typeof(GameObject)), data: null, type: null, priority: priority, color: QueryColors.type);
             }
 
             if (string.Equals(category, "Types", StringComparison.Ordinal))
@@ -1268,7 +1279,7 @@ namespace UnityEditor.Search
 
         internal static string CreateFindObjectReferenceQuery(UnityEngine.Object obj)
         {
-            var objPath = GetObjectPath(obj);
+            var objPath = GetObjectPath(obj, pathAsGlobalObjectId: false);
             if (string.IsNullOrEmpty(objPath))
                 return null;
             var query = $"ref=\"{objPath}\"";
@@ -1333,10 +1344,10 @@ namespace UnityEditor.Search
             if (string.IsNullOrEmpty(query))
                 return OpenDefaultQuickSearch();
 
-            return OpenWithProviders(query,
+            return OpenWithContextualProviders(query,
                 new [] { Providers.AssetProvider.type, Providers.BuiltInSceneObjectsProvider.type },
-                SearchFlags.Default,
-                "Find References");
+                contextualFlags: OpenWithContextualProvidersFlags.UseExplicitProvidersAsNormalProviders | OpenWithContextualProvidersFlags.AddActiveProvidersToContext,
+                eventContext: "FindReferences");
         }
 
         [CommandHandler("OpenToSearchByProperty")]
@@ -1382,7 +1393,8 @@ namespace UnityEditor.Search
             if (query == null)
                 return OpenDefaultQuickSearch();
 
-            return OpenWithProviders(query, isAssetQuery ? kAsset_PropertyQueryProviders : kScene_PropertyQueryProviders);
+            return OpenWithContextualProviders(query, isAssetQuery ? kAsset_PropertyQueryProviders : kScene_PropertyQueryProviders,
+                contextualFlags: OpenWithContextualProvidersFlags.UseExplicitProvidersAsNormalProviders | OpenWithContextualProvidersFlags.AddActiveProvidersToContext);
         }
 
         internal static string GetPropertyValueForQuery(SerializedProperty prop)
@@ -1391,7 +1403,7 @@ namespace UnityEditor.Search
             switch(prop.propertyType)
             {
                 case SerializedPropertyType.Color:
-                    return $"#{ColorUtility.ToHtmlStringRGB((Color)value)}";
+                    return $"#{ColorUtility.ToHtmlStringRGBA((Color)value)}";
                 case SerializedPropertyType.ObjectReference:
                 case SerializedPropertyType.ManagedReference:
                 case SerializedPropertyType.ExposedReference:
@@ -1399,13 +1411,20 @@ namespace UnityEditor.Search
                         if (value == null)
                             return "none";
 
-                        var path = GetObjectPath(value as UnityEngine.Object);
+                        var path = GetObjectPath(value as UnityEngine.Object, pathAsGlobalObjectId:false);
                         return $"\"{path}\"";
                     }
                 case SerializedPropertyType.String:
                     return $"\"{value}\"";
                 default:
-                    return value == null ? null : value.ToString();
+                    // TODO Number: When returning a numerical values used in a query, ensure the value uses an explicit formatter.
+                    return value switch
+                    {
+                        null => null,
+                        float f => Utils.FormatFloatString(f),
+                        double d => d.ToString(Utils.k_DoubleQueryFormatter),
+                        _ => value.ToString()
+                    };
             }
         }
 
@@ -1470,6 +1489,16 @@ namespace UnityEditor.Search
             return window;
         }
 
+        internal static ISearchView OpenTransientWindow()
+        {
+            var newContext = SearchService.CreateContext("", SearchFlags.GeneralSearchWindow | SearchFlags.Multiselect);
+            var viewState = new SearchViewState(newContext);
+            viewState.LoadDefaults();
+            var window = SearchWindow.Create(viewState).ShowWindow(newContext.options) as SearchWindow;
+            SearchAnalytics.SendEvent(window.state.sessionId, SearchAnalytics.GenericEventType.QuickSearchOpen, "TransientWindow");
+            return window;
+        }
+
         internal static ISearchView OpenDefaultQuickSearch()
         {
             var window = SearchWindow.Open(flags: SearchFlags.OpenGlobal);
@@ -1477,47 +1506,88 @@ namespace UnityEditor.Search
             return window;
         }
 
-        const SearchFlags kWithProviderDefaultFlags = SearchFlags.Multiselect | SearchFlags.Dockable;
+        const SearchFlags kWithProviderDefaultFlags = SearchFlags.Multiselect | SearchFlags.Dockable | SearchFlags.OpenContextual | SearchFlags.AllProvidersAvailable;
 
-        internal static ISearchView OpenWithProviders(params string[] providerIds)
+        internal static ISearchView OpenWithContextualProviders(params string[] providerIds)
         {
-            return OpenWithProviders(null, providerIds);
+            return OpenWithContextualProviders("", providerIds);
         }
 
-        [Obsolete("Use OpenWithProviders")]
-        internal static ISearchView OpenWithContextualProvider(string searchQuery, string[] providerIds, SearchFlags flags = kWithProviderDefaultFlags, string topic = null, bool useExplicitProvidersAsNormalProviders = false)
+        internal static SearchWindow FindReusableWindow(SearchViewState compatibleState)
         {
-            return OpenWithProviders(searchQuery, providerIds, flags, topic, useExplicitProvidersAsNormalProviders);
+            if (EditorWindow.HasOpenInstances<SearchWindow>())
+            {
+                return Resources.FindObjectsOfTypeAll<SearchWindow>()
+                    .Where(w => w.state.searchFlags.HasAny(SearchFlags.ReuseExistingWindow)
+                        || (w.context?.options.HasAny(SearchFlags.ReuseExistingWindow) ?? false))
+                    .FirstOrDefault();
+            }
+            return null;
         }
 
-        internal static ISearchView OpenWithProviders(string searchQuery, string[] providerIds, SearchFlags flags = kWithProviderDefaultFlags, string topic = null, bool useExplicitProvidersAsNormalProviders = false)
+        [Flags]
+        internal enum OpenWithContextualProvidersFlags
         {
-            var providers = SearchService.GetProviders(providerIds).ToArray();
-            if (providers.Length != providerIds.Length)
-                Debug.LogWarning($"Cannot find one of these search providers {string.Join(", ", providerIds)}");
+            None = 0,
+            UseExplicitProvidersAsNormalProviders = 1 << 0,
+            AddContextualFilterIdToQuery = 1 << 1,
+            AddActiveProvidersToContext = 1 << 2,
+            SyncSearch = 1 << 3,
 
-            if (providers.Length == 0)
+            Default = UseExplicitProvidersAsNormalProviders | AddContextualFilterIdToQuery | AddActiveProvidersToContext
+        }
+
+        internal static ISearchView OpenWithContextualProviders(string query, string[] providerIds,
+            SearchFlags flags = kWithProviderDefaultFlags,
+            OpenWithContextualProvidersFlags contextualFlags = OpenWithContextualProvidersFlags.Default,
+            string title = null,
+            string sessionName = null,
+            SearchAnalytics.GenericEventType eventType = SearchAnalytics.GenericEventType.QuickSearchOpen, string eventContext = "Contextual")
+        {
+            var contextualProviders = SearchService.GetProviders(providerIds);
+            if (contextualProviders.Count() == 0)
+            {
                 return OpenDefaultQuickSearch();
+            }
 
-            var context = SearchService.CreateContext(providers, searchQuery, flags);
-            context.useExplicitProvidersAsNormalProviders = useExplicitProvidersAsNormalProviders;
-            topic = topic ?? string.Join(", ", providers.Select(p => p.name.ToLower()));
-            var qsWindow = SearchWindow.Create<SearchWindow>(context, topic, flags);
+            title = title ?? string.Join(", ", contextualProviders.Select(p => p.name.ToLower()));
+            var mainProvider = contextualProviders.First();
 
-            var evt = SearchAnalytics.GenericEvent.Create(qsWindow.state.sessionId, SearchAnalytics.GenericEventType.QuickSearchOpen, "Contextual");
-            evt.message = providers[0].id;
-            if (providers.Length > 1)
-                evt.description = providers[1].id;
-            if (providers.Length > 2)
-                evt.description = providers[2].id;
-            if (providers.Length > 3)
-                evt.stringPayload1 = providers[3].id;
-            if (providers.Length > 4)
-                evt.stringPayload1 = providers[4].id;
+            if (flags.HasFlag(SearchFlags.GeneralSearchWindow))
+            {
+                flags |= SearchWindow.GetAdditionalGeneralSearchWindowFlags();
+            }
+            var useSessionSettings = flags.HasFlag(SearchFlags.UseSessionSettings);
+            if (contextualFlags.HasFlag(OpenWithContextualProvidersFlags.AddContextualFilterIdToQuery) &&
+                (!string.IsNullOrEmpty(query) || !useSessionSettings))
+            {
+                if (query == null)
+                    query = "";
+                query = $"{mainProvider.filterId}{query}";
+            }
 
-            SearchAnalytics.SendEvent(evt);
+            var providers = contextualProviders;
+            if (contextualFlags.HasFlag(OpenWithContextualProvidersFlags.AddActiveProvidersToContext))
+            {
+                providers = providers.Concat(SearchService.GetActiveProviders()).Distinct();
+            }
 
-            return qsWindow.ShowWindow();
+            var context = SearchService.CreateContext(providers, query);
+            context.useExplicitProvidersAsNormalProviders = contextualFlags.HasFlag(OpenWithContextualProvidersFlags.UseExplicitProvidersAsNormalProviders);
+            context.options |= flags;
+            var viewState = new SearchViewState(context) { title = null };
+            viewState.LoadDefaults(flags);
+            viewState.title = title;
+            viewState.group = mainProvider.id;
+            viewState.ignoreSaveSearches = !useSessionSettings;
+            viewState.sessionName = sessionName;
+            viewState.searchFlags = flags;
+            var searchWindow = SearchWindow.Create(viewState) as SearchWindow;
+            searchWindow.ShowWindow(flags: flags);
+            ((ISearchView)searchWindow).syncSearch = contextualFlags.HasFlag(OpenWithContextualProvidersFlags.SyncSearch);
+
+            searchWindow.SendEvent(eventType, searchWindow.currentGroup, eventContext);
+            return searchWindow;
         }
 
         internal static ISearchView OpenFromContextWindow(EditorWindow window = null)
@@ -1536,27 +1606,66 @@ namespace UnityEditor.Search
             {
                 query = searchable.searchText;
             }
-            return OpenFromContextWindow(query, "Help/Search Contextual", ignoreSaveSearches: true, syncSearch: false);
+
+            return OpenFromContextWindow(query, "Help/Search Contextual");
         }
 
-        internal static ISearchView OpenFromContextWindow(string query, string sourceContext, bool ignoreSaveSearches, bool syncSearch)
+        internal static ISearchView OpenFromContextWindow(string query, string sourceContext)
         {
-            var contextualProviders = GetProviderForContextualSearch(SearchService.Providers);
-            if (contextualProviders.Length == 0)
+            var contextualProviders = GetProviderForContextualSearch(SearchService.Providers).Select(p => p.id).ToArray();
+            return OpenWithContextualProviders(query, contextualProviders, kWithProviderDefaultFlags,
+                contextualFlags: OpenWithContextualProvidersFlags.AddActiveProvidersToContext | OpenWithContextualProvidersFlags.AddContextualFilterIdToQuery | OpenWithContextualProvidersFlags.SyncSearch,
+                eventType: SearchAnalytics.GenericEventType.QuickSearchJumpToSearch, eventContext: sourceContext);
+        }
+
+
+        internal static string GetGroupFromId(int instanceID)
+        {
+            var path = AssetDatabase.GetAssetPath(instanceID);
+            if (string.IsNullOrEmpty(path))
             {
-                return OpenDefaultQuickSearch();
+                // Check if this is a scene object or something else
+                var obj = EditorUtility.InstanceIDToObject(instanceID);
+                if (!obj || !(obj is GameObject))
+                    return GroupedSearchList.allGroupId;
             }
-            var flags = SearchFlags.OpenContextual | SearchFlags.ReuseExistingWindow;
-            var context = SearchService.CreateContext(contextualProviders, query);
-            context.options |= flags;
-            var viewState = new SearchViewState(context) { title = null };
-            viewState.LoadDefaults();
-            viewState.ignoreSaveSearches = ignoreSaveSearches;
-            var searchWindow = SearchWindow.Create(viewState) as SearchWindow;
-            searchWindow.ShowWindow(flags: flags);
-            searchWindow.SendEvent(SearchAnalytics.GenericEventType.QuickSearchJumpToSearch, searchWindow.currentGroup, sourceContext);
-            ((ISearchView)searchWindow).syncSearch = syncSearch;
-            return searchWindow;
+            return GetGroupFromPath(path);
+        }
+
+        internal static string GetGroupFromPath(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return Search.Providers.BuiltInSceneObjectsProvider.type;
+
+            if (AdbProvider.IsResourcePath(path))
+                return GetGroupProviderId(AdbProvider.resourcesItemTag);
+
+            if (path.StartsWith("Packages/"))
+                return GetGroupProviderId("Packages");
+
+            return Search.Providers.AssetProvider.type;
+        }
+
+        internal static void GetQueryParts(IQueryNode n, List<IFilterNode> filters, List<ISearchNode> searches)
+        {
+            if (n == null)
+                return;
+            if (n is IFilterNode filterNode)
+            {
+                filters.Add(filterNode);
+            }
+            else if (n is ISearchNode searchNode)
+            {
+                searches.Add(searchNode);
+            }
+
+            if (n.children != null)
+            {
+                foreach (var child in n.children)
+                {
+                    GetQueryParts(child, filters, searches);
+                }
+            }
         }
     }
 }

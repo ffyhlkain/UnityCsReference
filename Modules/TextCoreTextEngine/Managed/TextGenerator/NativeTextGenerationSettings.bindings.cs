@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using UnityEngine.Bindings;
 using UnityEngine.Scripting;
 using UnityEngine.TextCore.Text;
+using System.Collections.Generic;
 
 namespace UnityEngine.TextCore
 {
@@ -14,31 +15,77 @@ namespace UnityEngine.TextCore
     [NativeHeader("Modules/TextCoreTextEngine/Native/TextGenerationSettings.h")]
     [UsedByNativeCode("TextGenerationSettings")]
     [VisibleToOtherModules("UnityEngine.IMGUIModule", "UnityEngine.UIElementsModule")]
-    internal struct NativeTextGenerationSettings : IEquatable<NativeTextGenerationSettings>
+    internal struct NativeTextGenerationSettings
     {
         public IntPtr fontAsset;
         public IntPtr[] globalFontAssetFallbacks;
-        public string text; // TODO: use RenderedText instead of string here
-        public int screenWidth;
-        public int screenHeight;
-        public float fontSize;
+        public string text;         // Contains the parsed text, meaning the rich text tags have been removed.
+        public int screenWidth;     // Encoded in Fixed Point.
+        public int screenHeight;    // Encoded in Fixed Point.
         public WhiteSpace wordWrap;
+        public TextOverflow overflow;
         public LanguageDirection languageDirection;
-
+        public int vertexPadding; // Encoded in Fixed Point.
         [VisibleToOtherModules("UnityEngine.UIElementsModule")]
         internal HorizontalAlignment horizontalAlignment;
 
         [VisibleToOtherModules("UnityEngine.UIElementsModule")]
         internal VerticalAlignment verticalAlignment;
 
-        public Color32 color;
+        public int fontSize;        // Encoded in Fixed Point.
         public FontStyles fontStyle;
         public TextFontWeight fontWeight;
+
+        public TextSpan[] textSpans;
+        public Color32 color;
+
+        public int characterSpacing;        // Encoded in Fixed Point.
+        public int wordSpacing;             // Encoded in Fixed Point.
+        public int paragraphSpacing;        // Encoded in Fixed Point.
+
+        public bool hasLink => textSpans != null && Array.Exists(textSpans, span => span.linkID != -1);
+
+        public readonly TextSpan CreateTextSpan()
+        {
+            return new TextSpan()
+            {
+                fontAsset = this.fontAsset,
+                fontSize = this.fontSize,
+                color = this.color,
+                fontStyle = this.fontStyle,
+                fontWeight = this.fontWeight,
+                linkID = -1
+            };
+        }
+
+        // Used by automated tests
+        public string GetTextSpanContent(int spanIndex)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                throw new InvalidOperationException("The text property is null or empty.");
+            }
+
+            if (textSpans == null || spanIndex < 0 || spanIndex >= textSpans.Length)
+            {
+                throw new ArgumentOutOfRangeException(nameof(spanIndex), "Invalid span index.");
+            }
+
+            TextSpan span = textSpans[spanIndex];
+
+            if (span.startIndex < 0 || span.startIndex >= text.Length || span.startIndex + span.length > text.Length)
+            {
+                throw new ArgumentOutOfRangeException(nameof(spanIndex), "Invalid startIndex or length for the current text.");
+            }
+
+            return text.Substring(span.startIndex, span.length);
+        }
 
         public static NativeTextGenerationSettings Default => new ()
         {
             fontStyle = FontStyles.Normal,
-            fontWeight = TextFontWeight.Regular
+            fontWeight = TextFontWeight.Regular,
+            color = Color.black,
         };
 
         // Used by automated tests
@@ -57,61 +104,82 @@ namespace UnityEngine.TextCore
             fontStyle = tgs.fontStyle;
             fontWeight = tgs.fontWeight;
             languageDirection = tgs.languageDirection;
+            vertexPadding = tgs.vertexPadding;
+            overflow = tgs.overflow;
+            textSpans = tgs.textSpans != null ? (TextSpan[])tgs.textSpans.Clone() : null;
+            characterSpacing = tgs.characterSpacing;
+            wordSpacing = tgs.wordSpacing;
+            paragraphSpacing = tgs.paragraphSpacing;
         }
 
         public override string ToString()
         {
             string fallbacksString = globalFontAssetFallbacks != null
-              ? $"{string.Join(", ", globalFontAssetFallbacks)}"
-              : "null";
+                ? $"{string.Join(", ", globalFontAssetFallbacks)}"
+                : "null";
+
+            string textSpansString = "null";
+            if (textSpans != null)
+            {
+                System.Text.StringBuilder sb = new System.Text.StringBuilder();
+                sb.Append("[");
+                for (int i = 0; i < textSpans.Length; i++)
+                {
+                    if (i > 0)
+                    {
+                        sb.Append(", ");
+                    }
+                    sb.Append(textSpans[i].ToString());
+                }
+                sb.Append("]");
+                textSpansString = sb.ToString();
+            }
 
             return $"{nameof(fontAsset)}: {fontAsset}\n" +
-               $"{nameof(globalFontAssetFallbacks)}: {fallbacksString}\n" +
-               $"{nameof(text)}: {text}\n" +
-               $"{nameof(screenWidth)}: {screenWidth}\n" +
-               $"{nameof(screenHeight)}: {screenHeight}\n" +
-               $"{nameof(fontSize)}: {fontSize}\n" +
-               $"{nameof(wordWrap)}: {wordWrap}\n" +
-               $"{nameof(languageDirection)}: {languageDirection}\n";
+                $"{nameof(globalFontAssetFallbacks)}: {fallbacksString}\n" +
+                $"{nameof(text)}: {text}\n" +
+                $"{nameof(screenWidth)}: {screenWidth}\n" +
+                $"{nameof(screenHeight)}: {screenHeight}\n" +
+                $"{nameof(fontSize)}: {fontSize}\n" +
+                $"{nameof(wordWrap)}: {wordWrap}\n" +
+                $"{nameof(languageDirection)}: {languageDirection}\n" +
+                $"{nameof(horizontalAlignment)}: {horizontalAlignment}\n" +
+                $"{nameof(verticalAlignment)}: {verticalAlignment}\n" +
+                $"{nameof(color)}: {color}\n" +
+                $"{nameof(fontStyle)}: {fontStyle}\n" +
+                $"{nameof(fontWeight)}: {fontWeight}\n" +
+                $"{nameof(vertexPadding)}: {vertexPadding}\n" +
+                $"{nameof(overflow)}: {overflow}\n" +
+                $"{nameof(textSpans)}: {textSpansString}\n" +
+                $"{nameof(characterSpacing)}: {characterSpacing}\n" +
+                $"{nameof(paragraphSpacing)}: {paragraphSpacing}\n" +
+                $"{nameof(wordSpacing)}: {wordSpacing}\n";
         }
+    }
 
-        public bool Equals(NativeTextGenerationSettings other)
-        {
-            return fontAsset == other.fontAsset &&
-                   text == other.text &&
-                   screenWidth == other.screenWidth &&
-                   screenHeight == other.screenHeight &&
-                   fontSize.Equals(other.fontSize) &&
-                   wordWrap == other.wordWrap &&
-                   languageDirection == other.languageDirection &&
-                   horizontalAlignment == other.horizontalAlignment &&
-                   verticalAlignment == other.verticalAlignment &&
-                   color.InternalEquals(other.color) &&
-                   fontStyle == other.fontStyle &&
-                   fontWeight == other.fontWeight;
-        }
+    [VisibleToOtherModules( "UnityEngine.UIElementsModule")]
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct TextSpan
+    {
+        public int startIndex;
+        public int length;
+        public IntPtr fontAsset;
+        public int fontSize;        // Encoded in Fixed Point.
+        public Color32 color;
+        public FontStyles fontStyle;
+        public TextFontWeight fontWeight;
+        public int linkID;
 
-        public override bool Equals(object obj)
+        public override string ToString()
         {
-            return obj is NativeTextGenerationSettings other && Equals(other);
-        }
-
-        public override int GetHashCode()
-        {
-            var hashCode = new HashCode();
-            hashCode.Add(fontAsset);
-            hashCode.Add(text);
-            hashCode.Add(screenWidth);
-            hashCode.Add(screenHeight);
-            hashCode.Add(fontSize);
-            hashCode.Add(wordWrap);
-            hashCode.Add((int)languageDirection);
-            hashCode.Add((int)horizontalAlignment);
-            hashCode.Add((int)verticalAlignment);
-            hashCode.Add(color);
-            hashCode.Add((int)fontStyle);
-            hashCode.Add((int)fontWeight);
-            return hashCode.ToHashCode();
+            return $"{nameof(color)}: {color}\n" +
+                $"{nameof(fontStyle)}: {fontStyle}\n" +
+                $"{nameof(fontWeight)}: {fontWeight}\n" +
+                $"{nameof(linkID)}: {linkID}\n" +
+                $"{nameof(fontSize)}: {fontSize}\n" +
+                $"{nameof(fontAsset)}: {fontAsset}" +
+                $"{nameof(startIndex)}: {startIndex}\n" +
+                $"{nameof(length)}: {length}";
         }
     }
 
@@ -157,4 +225,10 @@ namespace UnityEngine.TextCore
         PreWrap
     }
 
+    [VisibleToOtherModules("UnityEngine.UIElementsModule")]
+    internal enum TextOverflow
+    {
+        Clip,
+        Ellipsis
+    }
 }

@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 using Unity.Properties;
 using UnityEngine;
@@ -399,7 +400,7 @@ namespace UnityEditor.UIElements
 
         // Based on the current mask, this is updating the value of the actual mask to use vs the full mask.
         // This is returning ~0 if all the values are selected...
-        int UpdateMaskIfEverything(int currentMask)
+        private protected virtual int UpdateMaskIfEverything(int currentMask)
         {
             var newMask = currentMask;
             // If the mask is full, put back the Everything flag.
@@ -495,7 +496,8 @@ namespace UnityEditor.UIElements
     }
 
     /// <summary>
-    /// Make a field for masks.
+    /// The MaskField is an Editor-only control that lets users select one or more options from a list of options.
+    /// For more information, refer to [[wiki:UIE-uxml-element-MaskField|UXML element MaskField]].
     /// </summary>
     public class MaskField : BaseMaskField<int>
     {
@@ -505,6 +507,16 @@ namespace UnityEditor.UIElements
         [UnityEngine.Internal.ExcludeFromDocs, Serializable]
         public new class UxmlSerializedData : BaseMaskField<int>.UxmlSerializedData
         {
+            [Conditional("UNITY_EDITOR")]
+            public new static void Register()
+            {
+                BaseMaskField<int>.UxmlSerializedData.Register();
+                UxmlDescriptionCache.RegisterType(typeof(UxmlSerializedData), new UxmlAttributeNames[]
+                {
+                    new (nameof(choices), "choices"),
+                });
+            }
+
             #pragma warning disable 649
             [SerializeField] List<string> choices;
             [SerializeField, UxmlIgnore, HideInInspector] UxmlAttributeFlags choices_UxmlAttributeFlags;

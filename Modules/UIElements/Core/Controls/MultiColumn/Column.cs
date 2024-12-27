@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using Unity.Properties;
 using UnityEngine.Internal;
 
@@ -96,6 +97,27 @@ namespace UnityEngine.UIElements
         [ExcludeFromDocs, Serializable]
         public class UxmlSerializedData : UIElements.UxmlSerializedData
         {
+            [Conditional("UNITY_EDITOR")]
+            public new static void Register()
+            {
+                UxmlDescriptionCache.RegisterType(typeof(UxmlSerializedData), new UxmlAttributeNames[]
+                {
+                    new (nameof(name), "name"),
+                    new (nameof(title), "title"),
+                    new (nameof(visible), "visible"),
+                    new (nameof(width), "width"),
+                    new (nameof(minWidth), "min-width"),
+                    new (nameof(maxWidth), "max-width"),
+                    new (nameof(stretchable), "stretchable"),
+                    new (nameof(sortable), "sortable"),
+                    new (nameof(optional), "optional"),
+                    new (nameof(resizable), "resizable"),
+                    new (nameof(headerTemplate), "header-template"),
+                    new (nameof(cellTemplate), "cell-template"),
+                    new (nameof(bindingPath), "binding-path"),
+                });
+            }
+
             #pragma warning disable 649
             [SerializeField] string name;
             [SerializeField, UxmlIgnore, HideInInspector] UxmlAttributeFlags name_UxmlAttributeFlags;
@@ -220,7 +242,7 @@ namespace UnityEngine.UIElements
                 var floatStr = str.Substring(0, digitEndIndex);
                 var unitStr = string.Empty;
                 if (unitIndex > 0)
-                    unitStr = str.Substring(unitIndex, str.Length - unitIndex).ToLower();
+                    unitStr = str.Substring(unitIndex, str.Length - unitIndex).ToLowerInvariant();
 
                 float v;
                 if (float.TryParse(floatStr, out v))

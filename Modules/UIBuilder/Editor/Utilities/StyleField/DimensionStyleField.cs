@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using UnityEngine;
@@ -23,6 +24,12 @@ namespace Unity.UI.Builder
         [Serializable]
         public new class UxmlSerializedData : StyleField<float>.UxmlSerializedData
         {
+            [Conditional("UNITY_EDITOR")]
+            public new static void Register()
+            {
+                StyleField<float>.UxmlSerializedData.Register();
+            }
+
             public override object CreateInstance() => new DimensionStyleField();
         }
 
@@ -96,6 +103,7 @@ namespace Unity.UI.Builder
             m_DraggerIntegerField = new IntegerField(" ");
             m_DraggerIntegerField.name = "dragger-integer-field";
             m_DraggerIntegerField.AddToClassList(k_DraggerFieldUssClassName);
+            m_DraggerIntegerField.focusable = false;
             m_DraggerIntegerField.RegisterValueChangedCallback(OnDraggerFieldUpdate);
             m_DraggerIntegerField.labelElement.RegisterCallback<PointerUpEvent>(OnDraggerPointerUp);
             Insert(0, m_DraggerIntegerField);

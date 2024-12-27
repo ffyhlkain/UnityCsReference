@@ -16,7 +16,6 @@ namespace UnityEditor
             {
                 //Modules/EditorToolbar/ToolbarElements/*.cs
                 yield return "Services/Account";
-                yield return "Services/Cloud";
                 //com.unity.collab-proxy/Editor/PlasticSCM/Toolbar/ToolbarButton.cs
                 yield return "Services/Version Control";
                 //Modules/EditorToolbar/ToolbarElements/*.cs
@@ -47,6 +46,7 @@ namespace UnityEditor
                 yield return "Editor Utility/Undo";
                 // Modules/Multiplayer/MultiplayerRoleDropdown.cs
                 yield return "Multiplayer/MultiplayerRole";
+                yield return "Services/Cloud";
             }
         }
 
@@ -68,6 +68,9 @@ namespace UnityEditor
             right.LoadToolbarElements(root.Q("ToolbarZoneRightAlign"));
 
             EditorToolbarUtility.LoadStyleSheets("MainToolbar", root);
+            if (EditorTextSettings.currentEditorTextRenderingMode == EditorTextRenderingMode.Bitmap)
+                root.style.unityEditorTextRenderingMode = new StyleEnum<EditorTextRenderingMode>(EditorTextRenderingMode.Bitmap);
+
             return root;
         }
     }

@@ -3,7 +3,6 @@
 // https://unity3d.com/legal/licenses/Unity_Reference_Only_License
 
 using System;
-using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using UnityEngine;
 using UnityEngine.Bindings;
@@ -19,8 +18,15 @@ namespace UnityEditor.Build.Profile
     [StructLayout(LayoutKind.Sequential)]
     [ExcludeFromObjectFactory]
     [ExcludeFromPreset]
+    [HelpURL("build-profiles-reference")]
     public sealed partial class BuildProfile : ScriptableObject
     {
+        /// <summary>
+        /// Asset Schema Version
+        /// </summary>
+        [SerializeField]
+        uint m_AssetVersion = 1;
+
         /// <summary>
         /// Build Target used to fetch module and build profile extension.
         /// </summary>
@@ -44,27 +50,25 @@ namespace UnityEditor.Build.Profile
         }
 
         /// <summary>
-        /// Module name used to fetch build profiles.
-        /// </summary>
-        string m_ModuleName;
-        [VisibleToOtherModules]
-        internal string moduleName
-        {
-            get => m_ModuleName;
-            set => m_ModuleName = value;
-        }
-
-        /// <summary>
         /// Platform ID of the build profile.
         /// Correspond to platform GUID in <see cref="BuildTargetDiscovery"/>
         /// </summary>
         [SerializeField] string m_PlatformId;
         [VisibleToOtherModules]
-        internal string platformId
+        internal GUID platformGuid
         {
-            get => m_PlatformId;
-            set => m_PlatformId = value;
+            get => new GUID(m_PlatformId);
+            set => m_PlatformId = value.ToString();
         }
+
+        /// <summary>
+        /// Platform ID of the build profile as string.
+        /// This is needed because the server team decided to use this
+        /// internal getter in their package.
+        /// PLEASE DON'T USE, USE platformGuid INSTEAD!
+        /// </summary>
+        [VisibleToOtherModules]
+        internal string platformId => m_PlatformId;
 
         /// <summary>
         /// Platform module specific build settings; e.g. AndroidBuildSettings.
@@ -75,6 +79,17 @@ namespace UnityEditor.Build.Profile
         {
             get => m_PlatformBuildProfile;
             set => m_PlatformBuildProfile = value;
+        }
+
+        /// <summary>
+        /// When set, this build profiles <see cref="scenes"/> used when building.
+        /// </summary>
+        /// <seealso cref="EditorBuildSettings"/>
+        [SerializeField] private bool m_OverrideGlobalSceneList = false;
+        internal bool overrideGlobalSceneList
+        {
+            get => m_OverrideGlobalSceneList;
+            set => m_OverrideGlobalSceneList = value;
         }
 
         /// <summary>
@@ -96,7 +111,7 @@ namespace UnityEditor.Build.Profile
                 m_Scenes = value;
                 CheckSceneListConsistency();
 
-                if (this == BuildProfileContext.instance.activeProfile)
+                if (this == BuildProfileContext.activeProfile && m_OverrideGlobalSceneList)
                     EditorBuildSettings.SceneListChanged();
             }
         }
@@ -104,16 +119,15 @@ namespace UnityEditor.Build.Profile
         /// <summary>
         /// Scripting Compilation Defines used during player and editor builds.
         /// </summary>
-        /// <remarks>
-        /// <see cref="EditorUserBuildSettings.GetActiveProfileYamlScriptingDefines"/> fetches active profile
-        /// define be deserializing the YAML file and assumes defines will be found under "m_ScriptingDefines" node.
-        /// </remarks>
         [SerializeField] private string[] m_ScriptingDefines = Array.Empty<string>();
         public string[] scriptingDefines
         {
             get => m_ScriptingDefines;
             set => m_ScriptingDefines = value;
         }
+
+        [VisibleToOtherModules]
+        internal Action OnPackageAddProgress;
 
         [SerializeField]
         PlayerSettingsYaml m_PlayerSettingsYaml = new();
@@ -127,11 +141,32 @@ namespace UnityEditor.Build.Profile
             set { m_PlayerSettings = value; }
         }
 
+        [VisibleToOtherModules]
+        internal Action OnPlayerSettingsUpdatedFromYAML;
+
+        /// <summary>
+        /// Cross-pipeline graphics settings overrides in build profile
+        /// </summary>
+        [VisibleToOtherModules]
+        internal BuildProfileGraphicsSettings graphicsSettings;
+
+        [VisibleToOtherModules]
+        internal Action OnGraphicsSettingsSubAssetRemoved;
+
+        /// <summary>
+        /// Quality settings overrides in build profile
+        /// </summary>
+        [VisibleToOtherModules]
+        internal BuildProfileQualitySettings qualitySettings;
+
+        [VisibleToOtherModules]
+        internal Action OnQualitySettingsSubAssetRemoved;
+
         // TODO: Return server IBuildTargets for server build profiles. (https://jira.unity3d.com/browse/PLAT-6612)
         /// <summary>
         /// Get the IBuildTarget of the build profile.
         /// </summary>
-        internal IBuildTarget GetIBuildTarget() => ModuleManager.GetIBuildTarget(buildTarget);
+        internal IBuildTarget GetIBuildTarget() => ModuleManager.GetIBuildTarget(platformGuid);
 
         /// <summary>
         /// Returns true if the given <see cref="BuildProfile"/> is the active profile or a classic
@@ -140,24 +175,26 @@ namespace UnityEditor.Build.Profile
         [VisibleToOtherModules]
         internal bool IsActiveBuildProfileOrPlatform()
         {
-            if (BuildProfileContext.instance.activeProfile == this)
+            if (BuildProfileContext.activeProfile == this)
                 return true;
 
-            if (BuildProfileContext.instance.activeProfile is not null
+            if (BuildProfileContext.activeProfile is not null
                 || !BuildProfileContext.IsClassicPlatformProfile(this))
                 return false;
 
-            var activePlatformId = BuildProfileModuleUtil.GetPlatformId(
-                EditorUserBuildSettings.activeBuildTarget, EditorUserBuildSettings.standaloneBuildSubtarget);
-            return platformId == activePlatformId;
+            return platformGuid == EditorUserBuildSettings.activePlatformGuid;
         }
 
         [VisibleToOtherModules]
         internal bool CanBuildLocally()
         {
+            // Note: If the build profile is still being configured (package add info is present)
+            // we do not want it to be buildable.
+            if (BuildProfileContext.instance.TryGetPackageAddInfo(this, out _))
+                return false;
             // Note: A platform build profile may have a non-null value even if its module is not installed.
             // This scenario is true for server platform profiles, which are the same type as the standalone one.
-            return platformBuildProfile != null && BuildProfileModuleUtil.IsModuleInstalled(platformId);
+            return platformBuildProfile != null && BuildProfileModuleUtil.IsModuleInstalled(platformGuid);
         }
 
         internal string GetLastRunnableBuildPathKey()
@@ -173,11 +210,26 @@ namespace UnityEditor.Build.Profile
             return BuildProfileModuleUtil.GetLastRunnableBuildKeyFromAssetPath(assetPath, key);
         }
 
+        /// <summary>
+        /// Duplicate the build profile. Note this does not create a new asset.
+        /// </summary>
+        [VisibleToOtherModules]
+        internal BuildProfile Duplicate()
+        {
+            var duplicatedProfile = Instantiate(this);
+
+            if (graphicsSettings != null)
+                duplicatedProfile.graphicsSettings = Instantiate(graphicsSettings);
+
+            if (qualitySettings != null)
+                duplicatedProfile.qualitySettings = Instantiate(qualitySettings);
+
+            return duplicatedProfile;
+        }
+
         void OnEnable()
         {
             ValidateDataConsistency();
-
-            moduleName = BuildProfileModuleUtil.GetModuleName(platformId);
 
             // Check if the platform support module has been installed,
             // and try to set an uninitialized platform settings.
@@ -187,8 +239,24 @@ namespace UnityEditor.Build.Profile
             onBuildProfileEnable?.Invoke(this);
             LoadPlayerSettings();
 
+            TryLoadGraphicsSettings();
+            TryLoadQualitySettings();
+
+            if (BuildProfileContext.instance.TryGetPackageAddInfo(this, out var packageAddInfo))
+            {
+                packageAddInfo.OnPackageAddProgress = () =>
+                {
+                    OnPackageAddProgress?.Invoke();
+                };
+                packageAddInfo.OnPackageAddComplete = () =>
+                {
+                    NotifyBuildProfileExtensionOfCreation(packageAddInfo.preconfiguredSettingsVariant);
+                };
+                packageAddInfo.RequestPackageInstallation();
+            }
+
             if (!EditorUserBuildSettings.isBuildProfileAvailable
-                || BuildProfileContext.instance.activeProfile != this)
+                || BuildProfileContext.activeProfile != this)
                 return;
 
             // On disk changes invoke OnEnable,
@@ -202,31 +270,87 @@ namespace UnityEditor.Build.Profile
             BuildProfileModuleUtil.RequestScriptCompilation(this);
         }
 
-        void OnDisable()
+        void TryLoadGraphicsSettings()
         {
-            RemovePlayerSettings();
-
-            // Active profile YAML may be read from disk during startup or
-            // Asset Database refresh, flush pending changes to disk.
-            if (BuildProfileContext.instance.activeProfile != this)
+            if (graphicsSettings != null)
                 return;
 
-            AssetDatabase.SaveAssetIfDirty(this);
+            var path = AssetDatabase.GetAssetPath(this);
+            var objects = AssetDatabase.LoadAllAssetsAtPath(path);
+
+            var data = Array.Find(objects, obj => obj is BuildProfileGraphicsSettings) as BuildProfileGraphicsSettings;
+            if (data == null)
+                return;
+
+            graphicsSettings = data;
+        }
+
+        void TryLoadQualitySettings()
+        {
+            if (qualitySettings != null)
+                return;
+
+            var path = AssetDatabase.GetAssetPath(this);
+            var objects = AssetDatabase.LoadAllAssetsAtPath(path);
+
+            var data = Array.Find(objects, obj => obj is BuildProfileQualitySettings) as BuildProfileQualitySettings;
+            if (data == null)
+                return;
+
+            qualitySettings = data;
+        }
+
+        void OnDisable()
+        {
+            if (BuildProfileContext.activeProfile == this)
+                EditorUserBuildSettings.SetActiveProfileScriptingDefines(m_ScriptingDefines);
+
+            var playerSettingsDirty = EditorUtility.IsDirty(m_PlayerSettings);
+            if (playerSettingsDirty)
+            {
+                BuildProfileModuleUtil.SerializePlayerSettings(this);
+                EditorUtility.SetDirty(this);
+            }
+
+            // OnDisable is called when entering play mode, during domain reloads, or when the object is destroyed.
+            // Avoid removing player settings for the first two cases to prevent slow syncs (e.g., color space) caused by global manager updates.
+            if (!EditorApplication.isUpdating)
+            {
+                RemovePlayerSettings();
+            }
+        }
+
+        [MenuItem("CONTEXT/BuildProfile/Reset", false)]
+        static void ContextMenuReset(MenuCommand menuCommand)
+        {
+            var targetBuildProfile = (BuildProfile) menuCommand.context;
+            if (targetBuildProfile == null)
+                return;
+
+            targetBuildProfile.platformBuildProfile = null;
+            targetBuildProfile.TryCreatePlatformSettings();
+            targetBuildProfile.scenes = Array.Empty<EditorBuildSettingsScene>();
+            targetBuildProfile.scriptingDefines = Array.Empty<string>();
+
+            BuildProfileModuleUtil.RemovePlayerSettings(targetBuildProfile);
+            targetBuildProfile.RemoveQualitySettings();
+            targetBuildProfile.RemoveGraphicsSettings();
+
+            AssetDatabase.SaveAssetIfDirty(targetBuildProfile);
         }
 
         void ValidateDataConsistency()
         {
-            // TODO: Remove migration code (https://jira.unity3d.com/browse/PLAT-8909)
-            // Set platform ID for build profiles created before it is introduced.
-            if (string.IsNullOrEmpty(platformId))
+            // Keep serialized platform GUID in sync with serialized build target and subtarget.
+            if (platformGuid.Empty())
             {
-                platformId = BuildProfileContext.IsSharedProfile(buildTarget) ?
-                    new GUID(string.Empty).ToString() : BuildProfileModuleUtil.GetPlatformId(buildTarget, subtarget);
+                platformGuid = BuildProfileContext.IsSharedProfile(buildTarget) ?
+                    new GUID(string.Empty) : BuildProfileModuleUtil.GetPlatformId(buildTarget, subtarget);
                 EditorUtility.SetDirty(this);
             }
             else
             {
-                var (curBuildTarget, curSubtarget) = BuildProfileModuleUtil.GetBuildTargetAndSubtarget(platformId);
+                var (curBuildTarget, curSubtarget) = BuildProfileModuleUtil.GetBuildTargetAndSubtarget(platformGuid);
                 if (buildTarget != curBuildTarget || subtarget != curSubtarget)
                 {
                     buildTarget = curBuildTarget;
@@ -264,7 +388,10 @@ namespace UnityEditor.Build.Profile
                     scene.path = AssetDatabase.GUIDToAssetPath(scene.guid);
                 }
 
-                if (string.IsNullOrEmpty(scene.path))
+
+                // Asset may have been deleted.
+                // AssetDatabase may cache GUID to/from path mapping.
+                if (string.IsNullOrEmpty(scene.path) || !AssetDatabase.AssetPathExists(scene.path))
                 {
                     // Scene Object may have been deleted from disk.
                     RemoveAt(i);
@@ -273,11 +400,6 @@ namespace UnityEditor.Build.Profile
 
                 if (!isGuidValid)
                     scene.guid = AssetDatabase.GUIDFromAssetPath(scene.path);
-
-                // Asset may have been deleted. AssetDatabase may cache GUID to/from
-                // path mapping.
-                if (AssetDatabase.GetMainAssetTypeFromGUID(scene.guid) is null)
-                    RemoveAt(i);
             }
 
             if (length == m_Scenes.Length)

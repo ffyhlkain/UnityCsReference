@@ -5,20 +5,15 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine.Bindings;
-using Unity.Jobs.LowLevel.Unsafe;
 using UnityEngine.Serialization;
-using UnityEngine.TextCore.LowLevel;
-
 
 namespace UnityEngine.TextCore.Text
 {
-    [System.Serializable][ExcludeFromPresetAttribute][ExcludeFromObjectFactory]
+    [System.Serializable]
+    [ExcludeFromPresetAttribute]
+    [ExcludeFromObjectFactory]
     public class TextSettings : ScriptableObject
     {
-        internal string k_SystemFontName =
-            "Lucida Grande"
-        ;
-
         /// <summary>
         /// The version of the TextSettings class.
         /// Version 1.2.0 was introduced with the TextCore package
@@ -39,7 +34,9 @@ namespace UnityEngine.TextCore.Text
             get => m_DefaultFontAsset;
             set => m_DefaultFontAsset = value;
         }
-        [FormerlySerializedAs("m_defaultFontAsset")][SerializeField]
+
+        [FormerlySerializedAs("m_defaultFontAsset")]
+        [SerializeField]
         protected FontAsset m_DefaultFontAsset;
 
         /// <summary>
@@ -51,7 +48,9 @@ namespace UnityEngine.TextCore.Text
             get => m_DefaultFontAssetPath;
             set => m_DefaultFontAssetPath = value;
         }
-        [FormerlySerializedAs("m_defaultFontAssetPath")][SerializeField]
+
+        [FormerlySerializedAs("m_defaultFontAssetPath")]
+        [SerializeField]
         protected string m_DefaultFontAssetPath = "Fonts & Materials/";
 
         /// <summary>
@@ -62,11 +61,14 @@ namespace UnityEngine.TextCore.Text
             get => m_FallbackFontAssets;
             set => m_FallbackFontAssets = value;
         }
-        [FormerlySerializedAs("m_fallbackFontAssets")][SerializeField]
+
+        [FormerlySerializedAs("m_fallbackFontAssets")]
+        [SerializeField]
         protected List<FontAsset> m_FallbackFontAssets;
 
         internal List<FontAsset> fallbackOSFontAssets
         {
+            [VisibleToOtherModules("UnityEngine.UIElementsModule")]
             get
             {
                 if (GetStaticFallbackOSFontAsset() == null)
@@ -88,7 +90,12 @@ namespace UnityEngine.TextCore.Text
         {
             s_FallbackOSFontAssetInternal = fontAssets;
         }
-        
+
+        internal virtual List<FontAsset> GetFallbackFontAssets(int textPixelSize = -1)
+        {
+            return fallbackFontAssets;
+        }
+
         /// <summary>
         /// Determines if the text system will use an instance material derived from the primary material preset or use the default material of the fallback font asset.
         /// </summary>
@@ -97,7 +104,9 @@ namespace UnityEngine.TextCore.Text
             get => m_MatchMaterialPreset;
             set => m_MatchMaterialPreset = value;
         }
-        [FormerlySerializedAs("m_matchMaterialPreset")][SerializeField]
+
+        [FormerlySerializedAs("m_matchMaterialPreset")]
+        [SerializeField]
         protected bool m_MatchMaterialPreset;
 
         /// <summary>
@@ -118,9 +127,10 @@ namespace UnityEngine.TextCore.Text
             get => m_MissingCharacterUnicode;
             set => m_MissingCharacterUnicode = value;
         }
-        [FormerlySerializedAs("m_missingGlyphCharacter")][SerializeField]
-        protected int m_MissingCharacterUnicode;
 
+        [FormerlySerializedAs("m_missingGlyphCharacter")]
+        [SerializeField]
+        protected int m_MissingCharacterUnicode;
 
         /// <summary>
         /// Determines if the "Clear Dynamic Data on Build" property will be set to true or false on newly created dynamic font assets.
@@ -163,7 +173,9 @@ namespace UnityEngine.TextCore.Text
             get => m_DefaultSpriteAsset;
             set => m_DefaultSpriteAsset = value;
         }
-        [FormerlySerializedAs("m_defaultSpriteAsset")][SerializeField]
+
+        [FormerlySerializedAs("m_defaultSpriteAsset")]
+        [SerializeField]
         protected SpriteAsset m_DefaultSpriteAsset;
 
         /// <summary>
@@ -175,7 +187,9 @@ namespace UnityEngine.TextCore.Text
             get => m_DefaultSpriteAssetPath;
             set => m_DefaultSpriteAssetPath = value;
         }
-        [FormerlySerializedAs("m_defaultSpriteAssetPath")][SerializeField]
+
+        [FormerlySerializedAs("m_defaultSpriteAssetPath")]
+        [SerializeField]
         protected string m_DefaultSpriteAssetPath = "Sprite Assets/";
 
         [Obsolete("The Fallback Sprite Assets list is now obsolete. Use the emojiFallbackTextAssets instead.", true)]
@@ -208,7 +222,9 @@ namespace UnityEngine.TextCore.Text
             get => m_DefaultStyleSheet;
             set => m_DefaultStyleSheet = value;
         }
-        [FormerlySerializedAs("m_defaultStyleSheet")][SerializeField]
+
+        [FormerlySerializedAs("m_defaultStyleSheet")]
+        [SerializeField]
         protected TextStyleSheet m_DefaultStyleSheet;
 
         /// <summary>
@@ -232,7 +248,9 @@ namespace UnityEngine.TextCore.Text
             get => m_DefaultColorGradientPresetsPath;
             set => m_DefaultColorGradientPresetsPath = value;
         }
-        [FormerlySerializedAs("m_defaultColorGradientPresetsPath")][SerializeField]
+
+        [FormerlySerializedAs("m_defaultColorGradientPresetsPath")]
+        [SerializeField]
         protected string m_DefaultColorGradientPresetsPath = "Text Color Gradients/";
 
         // =============================================
@@ -258,7 +276,7 @@ namespace UnityEngine.TextCore.Text
         }
         [SerializeField]
         protected UnicodeLineBreakingRules m_UnicodeLineBreakingRules;
-       
+
 
 
         // =============================================
@@ -279,7 +297,9 @@ namespace UnityEngine.TextCore.Text
             get => m_DisplayWarnings;
             set => m_DisplayWarnings = value;
         }
-        [FormerlySerializedAs("m_warningsDisabled")][SerializeField]
+
+        [FormerlySerializedAs("m_warningsDisabled")]
+        [SerializeField]
         protected bool m_DisplayWarnings = false;
 
         // =============================================
@@ -362,28 +382,10 @@ namespace UnityEngine.TextCore.Text
             if (TextGenerator.IsExecutingJob)
                 return null;
 
-            FontAsset fontAsset;
-            if (font.name == "System Normal" || font.name == "System Small" || font.name == "System Big" || font.name == "System Warning")
-            {
-                fontAsset = FontAsset.CreateFontAsset(k_SystemFontName, "Regular", 90);
-            }
-            else if (font.name == "System Normal Bold" || font.name == "System Small Bold")
-            {
-                fontAsset = FontAsset.CreateFontAsset(k_SystemFontName, "Bold", 90);
-            }
-            else
-            {
-                fontAsset = FontAsset.CreateFontAsset(font, 90, 9, GlyphRenderMode.SDFAA, 1024, 1024, shader, AtlasPopulationMode.Dynamic, true);
-            }
+            FontAsset fontAsset = FontAssetFactory.CreateDefaultEditorFontAsset(font, shader);
 
             if (fontAsset != null)
             {
-                fontAsset.hideFlags = HideFlags.DontSave;
-                fontAsset.atlasTextures[0].hideFlags = HideFlags.DontSave;
-                fontAsset.material.hideFlags = HideFlags.DontSave;
-                fontAsset.isMultiAtlasTexturesEnabled = true;
-                fontAsset.material.shader = shader;
-
                 m_FontReferences.Add(new FontReferenceMap(font, fontAsset));
                 m_FontLookup.Add(id, fontAsset);
             }
@@ -416,4 +418,5 @@ namespace UnityEngine.TextCore.Text
             return null;
         }
     }
+
 }

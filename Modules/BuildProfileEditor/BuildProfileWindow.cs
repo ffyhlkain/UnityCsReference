@@ -11,6 +11,7 @@ using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.Scripting;
 using UnityEngine.UIElements;
+using static UnityEditor.Build.Profile.Handlers.BuildProfileWindowSelection;
 
 namespace UnityEditor.Build.Profile
 {
@@ -18,7 +19,6 @@ namespace UnityEditor.Build.Profile
     /// Build Settings window in 'File > Build Settings'.
     /// Handles creating and editing of <see cref="BuildProfile"/> assets.
     /// </summary>
-    [EditorWindowTitle(title = "Build Settings")]
     internal class BuildProfileWindow : EditorWindow
     {
         const string k_DevOpsUrl = "https://unity.com/products/unity-devops?utm_medium=desktop-app&utm_source=unity-editor-window-menu&utm_content=buildsettings";
@@ -26,6 +26,7 @@ namespace UnityEditor.Build.Profile
         const string k_PlayerSettingsWindow = "Project/Player";
 
         internal const string buildProfileInspectorVisualElement = "build-profile-editor-inspector";
+        internal const string buildProfileInspectorHeaderVisualElement = "build-profile-editor-inspector-header";
 
         internal BuildProfileEditor buildProfileEditor;
         BuildProfileWorkflowState m_WindowState;
@@ -42,7 +43,7 @@ namespace UnityEditor.Build.Profile
         PlatformListView m_ProfileListViews;
         VisualElement m_WelcomeMessageElement;
 
-        VisualElement m_InspectorHeader;
+        VisualElement m_SelectionHeader;
 
         /// <summary>
         /// Build Profile inspector for the selected classic platform or profile,
@@ -50,6 +51,7 @@ namespace UnityEditor.Build.Profile
         /// </summary>
         /// <see cref="OnClassicPlatformSelected"/>
         ScrollView m_BuildProfileInspectorElement;
+        VisualElement m_BuildProfileInspectorHeaderElement;
 
         VisualElement m_AdditionalActionsDropdown;
         DropdownButton m_BuildButton;
@@ -84,10 +86,11 @@ namespace UnityEditor.Build.Profile
             m_BuildButton = CreateBuildDropdownButton();
             rootVisualElement.Q<VisualElement>("build-dropdown-button").Add(m_BuildButton);
             m_BuildProfileInspectorElement = rootVisualElement.Q<ScrollView>(buildProfileInspectorVisualElement);
+            m_BuildProfileInspectorHeaderElement = rootVisualElement.Q<VisualElement>(buildProfileInspectorHeaderVisualElement);
             m_BuildAndRunButton = rootVisualElement.Q<Button>("build-and-run-button");
             m_ActivateButton = rootVisualElement.Q<Button>("activate-button");
             m_WelcomeMessageElement = rootVisualElement.Q<VisualElement>("fallback-no-custom-build-profiles");
-            m_InspectorHeader = rootVisualElement.Q<VisualElement>("build-profile-editor-header");
+            m_SelectionHeader = rootVisualElement.Q<VisualElement>("build-profile-editor-header");
 
             // Apply localized text to static elements.
             rootVisualElement.Q<Label>("platforms-label").text = TrText.platforms;
@@ -146,20 +149,28 @@ namespace UnityEditor.Build.Profile
                 Application.OpenURL(k_DevOpsUrl);
             };
 
-            BuildProfileContext.instance.activeProfileChanged += OnActiveProfileChanged;
+            BuildProfileContext.activeProfileChanged -= OnActiveProfileChanged;
+            BuildProfileContext.activeProfileChanged += OnActiveProfileChanged;
+            ActiveBuildTargetListener.activeBuildTargetChanged += OnActiveBuildTargetChanged;
         }
 
         public void OnDisable()
         {
             DestroyImmediate(buildProfileEditor);
-            BuildProfileContext.instance.activeProfileChanged -= OnActiveProfileChanged;
-            m_BuildProfileDataSource?.Dispose();
+
+            BuildProfileContext.activeProfileChanged -= OnActiveProfileChanged;
+            ActiveBuildTargetListener.activeBuildTargetChanged -= OnActiveBuildTargetChanged;
+
+            if (m_BuildProfileDataSource != null)
+            {
+                SendWorkflowReport();
+                m_BuildProfileDataSource.Dispose();
+            }
 
             if (m_AssetImportWindow != null)
                 m_AssetImportWindow.Close();
 
             m_ProfileListViews?.Unbind();
-            SendWorkflowReport();
         }
 
         /// <summary>
@@ -181,8 +192,9 @@ namespace UnityEditor.Build.Profile
                 return;
             }
 
+            m_ActivateButton.text = TrText.activate;
             m_ProfileListViews.ClearPlatformSelection();
-            m_InspectorHeader.Show();
+            m_SelectionHeader.Show();
             m_BuildProfileSelection.SelectItems(selectedItems);
             m_BuildProfileSelection.UpdateSelectionGUI(profile);
 
@@ -198,6 +210,8 @@ namespace UnityEditor.Build.Profile
 
             if (shouldRebuild)
                 RebuildProfileListViews();
+
+            BuildProfileModuleUtil.RepaintProjectSettingsWindow();
         }
 
         /// <summary>
@@ -211,8 +225,9 @@ namespace UnityEditor.Build.Profile
                 return;
             }
 
+            m_ActivateButton.text = TrText.activatePlatform;
             m_ProfileListViews.ClearProfileSelection();
-            m_InspectorHeader.Show();
+            m_SelectionHeader.Show();
             m_BuildProfileSelection.SelectItem(profile);
             m_BuildProfileSelection.UpdateSelectionGUI(profile);
 
@@ -220,18 +235,22 @@ namespace UnityEditor.Build.Profile
 
             if (m_BuildProfileDataSource.ClearDeletedProfiles())
                 RebuildProfileListViews();
+
+            BuildProfileModuleUtil.RepaintProjectSettingsWindow();
         }
 
         /// <summary>
         /// Handles selection of unavailable and supported platform.
         /// </summary>
-        internal void OnMissingClassicPlatformSelected(string platformId)
+        internal void OnMissingClassicPlatformSelected(GUID platformId)
         {
+            m_SelectionHeader.Show();
             m_ProfileListViews.ClearProfileSelection();
             UpdateFormButtonState(null);
 
             // Render platform requirement helpbox instead of default inspector.
             m_BuildProfileInspectorElement.Clear();
+            m_BuildProfileInspectorHeaderElement.Clear();
             var warningHelpBox = new HelpBox()
             {
                 messageType = HelpBoxMessageType.Warning
@@ -242,6 +261,8 @@ namespace UnityEditor.Build.Profile
 
             // Update details headers.
             m_BuildProfileSelection.MissingPlatformSelected(platformId);
+
+            BuildProfileModuleUtil.RepaintProjectSettingsWindow();
         }
 
         /// <summary>
@@ -250,13 +271,28 @@ namespace UnityEditor.Build.Profile
         internal void OnClassicSceneListSelected()
         {
             m_BuildProfileSelection.ClearSelectedProfiles();
-            m_ProfileListViews.ClearProfileSelection();
+            m_ProfileListViews.SelectSharedSceneList();
 
             DestroyImmediate(buildProfileEditor);
             buildProfileEditor = ScriptableObject.CreateInstance<BuildProfileEditor>();
             m_BuildProfileInspectorElement.Clear();
+            m_BuildProfileInspectorHeaderElement.Clear();
             m_BuildProfileInspectorElement.Add(buildProfileEditor.CreateLegacyGUI());
-            m_InspectorHeader.Hide();
+            m_SelectionHeader.Hide();
+        }
+
+        /// <summary>
+        /// Selects the build profile in the custom profile list view.
+        /// </summary>
+        internal void OnBuildProfileCreated(BuildProfile profile)
+        {
+            // Clearing the selection is necessary to force repaint of the profile editor
+            // in a case when the newly created profiles' index matches the index of the old selected profile.
+            m_BuildProfileSelection.ClearListViewSelection(ListViewSelectionType.Custom);
+            var index = m_BuildProfileDataSource.customBuildProfiles.IndexOf(profile);
+            if (index < 0)
+                return;
+            m_BuildProfileSelection.visualElement.SelectBuildProfile(index);
         }
 
         /// <summary>
@@ -273,6 +309,12 @@ namespace UnityEditor.Build.Profile
         internal void RepaintAndClearSelection()
         {
             RebuildProfileListViews();
+
+            // Clearing the selection forces the ListView.selectionChanged event to trigger.
+            // This is necessary because if the selection index remains the same after deletion,
+            // the selectionChanged event will not be called. This ensures that the build profile
+            // inspector is updated accordingly.
+            m_BuildProfileSelection.ClearListViewSelection(ListViewSelectionType.Custom);
             m_ProfileListViews.SelectActiveProfile();
         }
 
@@ -304,14 +346,22 @@ namespace UnityEditor.Build.Profile
             m_ProfileListViews.Rebuild();
         }
 
+        /// <summary>
+        /// Sticky editor visual elements above inspector window.
+        /// </summary>
+        internal void AppendInspectorHeaderElement(VisualElement element)
+        {
+            m_BuildProfileInspectorHeaderElement.Add(element);
+        }
+
         void Update()
         {
             // We need to detect when a build profile asset that is selected in inspector
             // gets deleted. Since we want to avoid using asset post processors for performance
             // reason, we check it in update
-            if (buildProfileEditor?.buildProfile == null &&
-                m_BuildProfileSelection?.IsMultipleSelection() == false &&
-                m_InspectorHeader?.style.display != DisplayStyle.None)
+            if (buildProfileEditor != null &&
+                buildProfileEditor.buildProfile == null &&
+                m_BuildProfileSelection?.IsSingleSelection() == true)
             {
                 DestroyImmediate(buildProfileEditor);
                 m_BuildProfileDataSource?.DeleteNullProfiles();
@@ -406,9 +456,19 @@ namespace UnityEditor.Build.Profile
             if (activateProfile.IsActiveBuildProfileOrPlatform())
                 return;
 
+            // before we update the BuildProfileContext's activeProfile,
+            // we want to capture the current active profile to check if an editor restart is required
+            // because certain player settings changed that will require it
+            var currentBuildProfile = BuildProfileContext.activeProfile;
+
+            // success here is handling the player settings, failure is the user cancels handling the restart.
+            var isSuccess = BuildProfileModuleUtil.HandlePlayerSettingsChanged(currentBuildProfile, activateProfile);
+            if (!isSuccess)
+                return;
+
             // Classic profiles should not be set as active, they are identified
             // by the state of EditorUserBuildSettings active build target.
-            BuildProfileContext.instance.activeProfile = !BuildProfileContext.IsClassicPlatformProfile(activateProfile)
+            BuildProfileContext.activeProfile = !BuildProfileContext.IsClassicPlatformProfile(activateProfile)
                 ? activateProfile : null;
 
             buildProfileEditor.OnActivateClicked();
@@ -435,7 +495,7 @@ namespace UnityEditor.Build.Profile
 
             BuildProfileModuleUtil.SwitchLegacySelectedBuildTargets(profile);
 
-            BuildProfileModuleUtil.CallInternalBuildMethods(m_ShouldAskForBuildLocation, optionFlags);
+            EditorApplication.delayCall += () => BuildProfileModuleUtil.CallInternalBuildMethods(m_ShouldAskForBuildLocation, optionFlags);
         }
 
         void UpdateFormButtonState(BuildProfile profile)
@@ -456,8 +516,9 @@ namespace UnityEditor.Build.Profile
             }
             else
             {
-                m_WindowState.activateAction = profile.CanBuildLocally() ? ActionState.Enabled : ActionState.Hidden;
-                m_WindowState.buildAction = ActionState.Hidden;
+                bool canBuild = profile.CanBuildLocally();
+                m_WindowState.activateAction = canBuild ? ActionState.Enabled : ActionState.Hidden;
+                m_WindowState.buildAction = canBuild ? ActionState.Disabled : ActionState.Hidden;
                 m_WindowState.buildAndRunAction = ActionState.Hidden;
                 m_WindowState.Refresh();
             }
@@ -472,6 +533,15 @@ namespace UnityEditor.Build.Profile
             UpdateFormButtonState(m_BuildProfileSelection.Get(0));
         }
 
+        /// <summary>
+        /// Callback invoked when the active build target changes.
+        /// </summary>
+        void OnActiveBuildTargetChanged(BuildTarget prev, BuildTarget cur)
+        {
+            m_ProfileListViews.Rebuild();
+            UpdateFormButtonState(m_BuildProfileSelection.Get(0));
+        }
+
         void RebuildBuildProfileEditor(BuildProfile profile)
         {
             // Rebuild the BuildProfile inspector, targeting the newly selected BuildProfile.
@@ -481,6 +551,7 @@ namespace UnityEditor.Build.Profile
             buildProfileEditor.parent = this;
 
             m_BuildProfileInspectorElement.Clear();
+            m_BuildProfileInspectorHeaderElement.Clear();
             m_BuildProfileInspectorElement.Add(buildProfileEditor.CreateInspectorGUI());
 
             // Builds can only be made for an active BuildProfile,
@@ -495,26 +566,29 @@ namespace UnityEditor.Build.Profile
 
         void SendWorkflowReport()
         {
+            if (m_BuildProfileDataSource == null)
+                return;
+
             if (m_BuildProfileDataSource.customBuildProfiles.Count == 0)
             {
                 EditorAnalytics.SendAnalytic(new BuildProfileWorkflowReport());
                 return;
             }
 
-            Dictionary<string, BuildProfileWorkflowReport> modules = new();
+            Dictionary<GUID, BuildProfileWorkflowReport> modules = new();
             foreach (var profile in m_BuildProfileDataSource.customBuildProfiles)
             {
-                if (modules.TryGetValue(profile.platformId, out var report))
+                if (modules.TryGetValue(profile.platformGuid, out var report))
                 {
                     report.Increment();
                     continue;
                 }
 
-                modules.Add(profile.platformId,
+                modules.Add(profile.platformGuid,
                     new BuildProfileWorkflowReport(new BuildProfileWorkflowReport.Payload()
                 {
-                    platformId = profile.platformId,
-                    platformDisplayName = BuildProfileModuleUtil.GetClassicPlatformDisplayName(profile.platformId),
+                    platformId = profile.platformGuid,
+                    platformDisplayName = BuildProfileModuleUtil.GetClassicPlatformDisplayName(profile.platformGuid),
                     count = 1
                 }));
             }

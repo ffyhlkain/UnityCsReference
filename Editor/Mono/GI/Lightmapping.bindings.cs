@@ -100,6 +100,13 @@ namespace UnityEditor
             Legacy = 2
         }
 
+        [NativeHeader("Runtime/Graphics/LightmapSettings.h")]
+        public enum BakeOnSceneLoadMode
+        {
+            Never = 0,
+            IfMissingLightingData = 1,
+        };
+
         // Obsolete, please use Actions instead
         public delegate void OnStartedFunction();
         public delegate void OnCompletedFunction();
@@ -346,15 +353,17 @@ namespace UnityEditor
 
         // This event is fired when BakeInput has been populated, but before passing it to Bake().
         // Do not store and access BakeInput beyond the call-back.
-        internal static event Action<LightBaker.BakeInput, InputExtraction.SourceMap> createdBakeInput;
+        internal static event Action<LightBaker.BakeInput, LightBaker.LightmapRequests, LightBaker.LightProbeRequests, InputExtraction.SourceMap> createdBakeInput;
 
-        internal static void Internal_CallOnCreatedBakeInput(IntPtr p_BakeInput, IntPtr p_SourceMap)
+        internal static void Internal_CallOnCreatedBakeInput(IntPtr p_BakeInput, IntPtr p_LightmapRequests, IntPtr LightProbeRequests, IntPtr p_SourceMap)
         {
             if (createdBakeInput != null)
             {
                 using var bakeInput = new LightBaker.BakeInput(p_BakeInput);
+                using var lightmapRequests = new LightBaker.LightmapRequests(p_LightmapRequests);
+                using var lightProbeRequests = new LightBaker.LightProbeRequests(LightProbeRequests);
                 using var sourceMap = new InputExtraction.SourceMap(p_SourceMap);
-                createdBakeInput(bakeInput, sourceMap);
+                createdBakeInput(bakeInput, lightmapRequests, lightProbeRequests, sourceMap);
             }
         }
 
@@ -446,6 +455,9 @@ namespace UnityEditor
         public static extern void GetTerrainGIChunks([NotNull] Terrain terrain, ref int numChunksX, ref int numChunksY);
 
         [StaticAccessor("GetLightmapSettings()")]
+        public static extern BakeOnSceneLoadMode bakeOnSceneLoad { get; set; }
+
+        [StaticAccessor("GetLightmapSettings()")]
         public static extern LightingDataAsset lightingDataAsset { get; set; }
 
         public static bool TryGetLightingSettings(out LightingSettings settings)
@@ -515,6 +527,12 @@ namespace UnityEditor
         [StaticAccessor("GetLightmapSettingsManager()")]
         [NativeName("GetLightingSettingsForScene")]
         public static extern LightingSettings GetLightingSettingsForScene(Scene scene);
+
+        [FreeFunction]
+        public static extern LightingDataAsset GetLightingDataAssetForScene(Scene scene);
+
+        [FreeFunction(ThrowsException = true)]
+        public static extern void SetLightingDataAssetForScene(Scene scene, LightingDataAsset lda);
 
         public static void BakeMultipleScenes(string[] paths)
         {

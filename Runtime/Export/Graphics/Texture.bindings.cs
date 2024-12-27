@@ -204,6 +204,7 @@ namespace UnityEngine
 
     [NativeHeader("Runtime/Graphics/Texture2D.h")]
     [NativeHeader("Runtime/Graphics/GeneratedTextures.h")]
+    [HelpURL("texture-type-default")] // 2D texture is considering the 'default' texture, so it hasn't been given it own dedicated 'class-Texture2D' manual page
     [UsedByNativeCode]
     [ExcludeFromPreset]
     public sealed partial class Texture2D : Texture
@@ -847,6 +848,7 @@ namespace UnityEngine
         extern public bool enableRandomWrite { get; set; }
         extern public bool useDynamicScale { get; set; }
         extern public bool useDynamicScaleExplicit { get; set; }
+        extern public bool enableShadingRate { get; set; }
 
         extern public void ApplyDynamicScale();
 

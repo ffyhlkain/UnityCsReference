@@ -302,7 +302,7 @@ namespace UnityEngine.UIElements
         {
             get
             {
-                uitkTextHandle.AddTextInfoToCache();
+                uitkTextHandle.AddTextInfoToPermanentCache();
                 return uitkTextHandle.GetCursorPositionFromStringIndexUsingLineHeight(selection.cursorIndex) + contentRect.min;
             }
         }
@@ -314,7 +314,7 @@ namespace UnityEngine.UIElements
         {
             get
             {
-                uitkTextHandle.AddTextInfoToCache();
+                uitkTextHandle.AddTextInfoToPermanentCache();
                 return uitkTextHandle.GetLineHeightFromCharacterIndex(selection.cursorIndex);
             }
         }
@@ -404,7 +404,7 @@ namespace UnityEngine.UIElements
             // We must take the padding, margin and border into account
             var layoutOffset = contentRect.min;
 
-            if (m_TouchScreenKeyboard != null && m_HideMobileInput)
+            if (m_TouchScreenKeyboard != null && hideMobileInput)
             {
                 var textInfo = uitkTextHandle.textInfo;
                 var stringPosition = selection.selectIndex < selection.cursorIndex ? textInfo.textElementInfo[selection.selectIndex].index : textInfo.textElementInfo[selection.cursorIndex].index;
@@ -466,6 +466,24 @@ namespace UnityEngine.UIElements
                         playmodeTintColor = playmodeTintColor
                     });
                 }
+            }
+        }
+
+        private void DrawNativeHighlighting(MeshGenerationContext mgc)
+        {
+            var playmodeTintColor = mgc.visualElement?.playModeTintColor ?? Color.white;
+            var startIndex = Math.Min(selection.cursorIndex, selection.selectIndex);
+            var endIndex = Math.Max(selection.cursorIndex, selection.selectIndex);
+            var rectangles = uitkTextHandle.GetHighlightRectangles(startIndex, endIndex);
+
+            for (int i = 0; i < rectangles.Length; i++)
+            {
+                mgc.meshGenerator.DrawRectangle(new UIR.MeshGenerator.RectangleParams
+                {
+                    rect = new Rect(rectangles[i].position + contentRect.min, rectangles[i].size),
+                    color = selection.selectionColor,
+                    playmodeTintColor = playmodeTintColor
+                });
             }
         }
 

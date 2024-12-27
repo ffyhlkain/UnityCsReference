@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using UnityEditor.UIElements.Debugger;
 using System;
 using UnityEditor;
+using UnityEngine.UIElements.StyleSheets;
 
 namespace Unity.UI.Builder
 {
@@ -70,10 +71,10 @@ namespace Unity.UI.Builder
             return element.GetProperty(BuilderConstants.ElementLinkedStyleSelectorVEPropertyName) as StyleComplexSelector;
         }
 
-        internal static void SetSelectorString(VisualElement element, StyleSheet styleSheet, string newString)
+        internal static bool SetSelectorString(VisualElement element, StyleSheet styleSheet, string newString, out string error)
         {
             var complexSelector = element.GetProperty(BuilderConstants.ElementLinkedStyleSelectorVEPropertyName) as StyleComplexSelector;
-            styleSheet.SetSelectorString(complexSelector, newString);
+            return styleSheet.SetSelectorString(complexSelector, newString, out error);
         }
 
         internal static List<string> GetSelectorParts(VisualElement element)
@@ -171,7 +172,18 @@ namespace Unity.UI.Builder
 
         internal static StyleComplexSelector CreateNewSelector(VisualElement selectorContainerElement, StyleSheet styleSheet, string selectorStr)
         {
-            var complexSelector = styleSheet.AddSelector(selectorStr);
+            if (!SelectorUtility.TryCreateSelector(selectorStr, out var complexSelector, out var error))
+            {
+                Builder.ShowWarning(error);
+                return null;
+            }
+
+            return CreateNewSelector(selectorContainerElement, styleSheet, complexSelector);
+        }
+
+        internal static StyleComplexSelector CreateNewSelector(VisualElement selectorContainerElement, StyleSheet styleSheet, StyleComplexSelector selector)
+        {
+            var complexSelector = styleSheet.AddSelector(selector);
 
             VisualElement styleSheetElement = null;
             foreach (var child in selectorContainerElement.Children())
@@ -277,6 +289,33 @@ namespace Unity.UI.Builder
                 var complexSelectorString = StyleSheetToUss.ToUssSelector(complexSelector);
                 complexSelectors.Add(complexSelectorString);
             }
+
+            return complexSelectors;
+        }
+
+        public static List<SelectorMatchRecord> GetMatchingSelectorsOnElementFromLocalStyleSheet(VisualElement documentElement)
+        {
+            var matchedElementsSelector = new MatchedRulesExtractor();
+
+            // set all pseudo states to true to get all matching selectors
+            var previousPseudoStates = documentElement.pseudoStates;
+            documentElement.pseudoStates = PseudoStates.Active | PseudoStates.Disabled | PseudoStates.Focus | PseudoStates.Hover | PseudoStates.Checked;
+
+            matchedElementsSelector.FindMatchingRules(documentElement);
+
+            if (matchedElementsSelector.selectedElementRules == null || matchedElementsSelector.selectedElementRules.Count <= 0)
+                return new List<SelectorMatchRecord>();
+
+            var complexSelectors = new List<SelectorMatchRecord>();
+            foreach (var rule in matchedElementsSelector.selectedElementRules)
+            {
+                if (rule.matchRecord.sheet.IsUnityEditorStyleSheet() || rule.matchRecord.sheet.isDefaultStyleSheet)
+                    continue;
+                complexSelectors.Add(rule.matchRecord);
+            }
+
+            // return pseudo states to previous state
+            documentElement.pseudoStates = previousPseudoStates;
 
             return complexSelectors;
         }

@@ -14,7 +14,7 @@ namespace UnityEditor
 {
     internal class PlayerSettingsIconsEditor
     {
-        class SettingsContent
+        internal class SettingsContent
         {
             public static readonly GUIContent iconTitle = EditorGUIUtility.TrTextContent("Icon");
             public static readonly GUIContent defaultIcon = EditorGUIUtility.TrTextContent("Default Icon");
@@ -28,10 +28,6 @@ namespace UnityEditor
         const int kIconSpacing = 6;
 
         PlayerSettingsEditor m_Owner;
-
-        int m_SelectedPlatform = 0;
-
-        BuildPlatform[] m_ValidPlatforms;
 
         // Serialized icons
         SerializedProperty m_PlatformIcons;
@@ -54,8 +50,6 @@ namespace UnityEditor
 
         public void OnEnable()
         {
-            m_ValidPlatforms = BuildPlatforms.instance.GetValidPlatforms(true).ToArray();
-
             m_PlatformIcons       = m_Owner.FindPropertyAssert("m_BuildTargetPlatformIcons");
             m_LegacyPlatformIcons = m_Owner.FindPropertyAssert("m_BuildTargetIcons");
             m_UIPrerenderedIcon   = m_Owner.FindPropertyAssert("uIPrerenderedIcon");
@@ -379,9 +373,8 @@ namespace UnityEditor
             DeserializeLegacyIcons();
         }
 
-        public void IconSectionGUI(NamedBuildTarget namedBuildTarget, ISettingEditorExtension settingsExtension, int platformID, int sectionIndex)
+        public void IconSectionGUI(BuildPlatform platform, ISettingEditorExtension settingsExtension, int platformID, int sectionIndex)
         {
-            m_SelectedPlatform = platformID;
             if (!m_Owner.BeginSettingsBox(sectionIndex, SettingsContent.iconTitle))
             {
                 m_Owner.EndSettingsBox();
@@ -394,20 +387,18 @@ namespace UnityEditor
 
             if (platformUsesStandardIcons)
             {
-                var selectedDefault = (m_SelectedPlatform < 0);
+                var selectedDefault = (platformID < 0);
                 // Set default platform variables
-                BuildPlatform platform = null;
                 var platformName = "";
 
                 // Override if a platform is selected
                 if (!selectedDefault)
                 {
-                    platform = m_ValidPlatforms[m_SelectedPlatform];
                     platformName = platform.name;
                 }
 
                 var iconUISettings = IconSettings.StandardIcons;
-                if (BuildTargetDiscovery.TryGetBuildTarget(platform.defaultTarget, out IBuildTarget iBuildTarget))
+                if (BuildTargetDiscovery.TryGetBuildTarget(BuildPipeline.GetBuildTargetByName(platform.name), out IBuildTarget iBuildTarget))
                     iconUISettings = iBuildTarget.IconPlatformProperties?.IconUISettings ?? IconSettings.StandardIcons;
 
                 if (iconUISettings == IconSettings.None)
@@ -581,7 +572,7 @@ namespace UnityEditor
         /// </summary>
         bool IsInBuildProfileEditor()
         {
-            return m_Owner.IsBuildProfile();
+            return m_Owner.IsBuildProfileEditor();
         }
     }
 }

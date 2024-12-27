@@ -231,7 +231,7 @@ namespace UnityEditor.Toolbars
             {
                 if (value && m_TargetTool == Tool.Custom)
                     ToolManager.RestorePreviousTool();
-                else    
+                else
                     ToolManager.SetActiveTool(currentVariant);
             }
 
@@ -244,6 +244,11 @@ namespace UnityEditor.Toolbars
             ToolManager.activeToolChanged += UpdateState;
             ToolManager.activeContextChanged += UpdateState;
             SceneViewMotion.viewToolActiveChanged += UpdateState;
+            
+            // We only need the state to auto-refresh for custom tools.
+            // For the built-in tools, we can refresh internally using RefreshAvailableTools if needed.
+            if (!IsBuiltinTool())
+                EditorApplication.update += UpdateAvailability;
 
             if (m_TargetTool == Tool.View)
             {
@@ -257,6 +262,9 @@ namespace UnityEditor.Toolbars
             ToolManager.activeContextChanged -= UpdateState;
             ToolManager.activeToolChanged -= UpdateState;
             SceneViewMotion.viewToolActiveChanged -= UpdateState;
+            
+            if (!IsBuiltinTool())
+                EditorApplication.update -= UpdateAvailability;
 
             if (m_TargetTool == Tool.View)
                 Tools.viewToolChanged -= UpdateViewToolContent;
@@ -290,6 +298,7 @@ namespace UnityEditor.Toolbars
             switch (m_TargetTool)
             {
                 case Tool.View:
+                    tooltip = L10n.Tr("View Tool");
                     UpdateViewToolContent();
                     break;
                 case Tool.Move:
@@ -332,7 +341,7 @@ namespace UnityEditor.Toolbars
                     break;
             }
         }
-        
+
         void ClearButtonClassList()
         {
             RemoveFromClassList(s_UssClassName_MoveTool);
@@ -349,16 +358,26 @@ namespace UnityEditor.Toolbars
 
         void UpdateState()
         {
-            SetValueWithoutNotify(IsActiveTool());
+            var isActiveTool = IsActiveTool();
+            if (value != isActiveTool)
+                SetValueWithoutNotify(isActiveTool);
 
+            UpdateAvailability();
+        }
+
+        void UpdateAvailability()
+        {
             var missing = EditorToolUtility.GetEditorToolWithEnum(m_TargetTool) is NoneTool;
             var display = missing ? DisplayStyle.None : DisplayStyle.Flex;
-
             if (style.display != display)
             {
                 style.display = display;
                 displayChanged?.Invoke();
             }
+
+            var enabled = currentVariant.IsAvailable();
+            if (enabledSelf != enabled)
+                enabledSelf = enabled;
         }
 
         bool IsActiveTool()
@@ -366,6 +385,11 @@ namespace UnityEditor.Toolbars
             if (Tools.viewToolActive)
                 return m_TargetTool == Tool.View;
             return ToolManager.IsActiveTool(currentVariant);
+        }
+
+        bool IsBuiltinTool()
+        {
+            return EditorToolUtility.IsManipulationTool(m_TargetTool) || (m_TargetTool == Tool.View);
         }
 
         VisualElement GetOverlayCanvas()

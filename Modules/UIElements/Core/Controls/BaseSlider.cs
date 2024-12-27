@@ -42,6 +42,15 @@ namespace UnityEngine.UIElements
         [UnityEngine.Internal.ExcludeFromDocs, Serializable]
         public new abstract class UxmlSerializedData : BaseField<TValueType>.UxmlSerializedData
         {
+            public new static void Register()
+            {
+                BaseField<TValueType>.UxmlSerializedData.Register();
+                UxmlDescriptionCache.RegisterType(typeof(UxmlSerializedData), new UxmlAttributeNames[]
+                {
+                    new (nameof(fill), "fill"),
+                });
+            }
+
             #pragma warning disable 649
             [SerializeField] bool fill;
             [SerializeField, UxmlIgnore, HideInInspector] UxmlAttributeFlags fill_UxmlAttributeFlags;
@@ -399,6 +408,15 @@ namespace UnityEngine.UIElements
         /// USS class name of fill element in elements of this type.
         /// </summary>
         public static readonly string fillUssClassName = ussClassName + "__fill";
+        /// <summary>
+        /// USS class name on the dragger that indicates it is currently controlled by <see cref="NavigationMoveEvent"/>.
+        /// When the slider detects move events aligned with the slider's direction, it adjusts the slider's value.
+        /// If it detects a navigation submit event, it removes the style, causing all navigation events to revert to their default behavior.
+        /// A second navigation submit event re-applies the style to the dragger and restores the previous customized behavior.
+        /// </summary>
+        public static readonly string movableUssClassName = ussClassName + "--movable";
+
+        internal const string k_FillElementName = "unity-fill";
 
         internal BaseSlider(string label, TValueType start, TValueType end, SliderDirection direction = SliderDirection.Horizontal, float pageSize = kDefaultPageSize)
             : base(label, null)
@@ -436,6 +454,9 @@ namespace UnityEngine.UIElements
             dragContainer.AddManipulator(clampedDragger);
 
             RegisterCallback<KeyDownEvent>(OnKeyDown);
+            RegisterCallback<FocusInEvent>(OnFocusIn);
+            RegisterCallback<FocusOutEvent>(OnFocusOut);
+            RegisterCallback<NavigationSubmitEvent>(OnNavigationSubmit);
             RegisterCallback<NavigationMoveEvent>(OnNavigationMove);
 
             UpdateTextFieldVisibility();
@@ -447,7 +468,7 @@ namespace UnityEngine.UIElements
 
         /// <undoc/>
         /// TODO why not make this stuff internal?
-        protected static float GetClosestPowerOfTen(float positiveNumber)
+        protected internal static float GetClosestPowerOfTen(float positiveNumber)
         {
             if (positiveNumber <= 0)
                 return 1;
@@ -456,7 +477,7 @@ namespace UnityEngine.UIElements
 
         /// <undoc/>
         /// TODO why not make this stuff internal?
-        protected static float RoundToMultipleOf(float value, float roundingValue)
+        protected internal static float RoundToMultipleOf(float value, float roundingValue)
         {
             if (roundingValue == 0)
                 return value;
@@ -621,6 +642,9 @@ namespace UnityEngine.UIElements
 
         void OnNavigationMove(NavigationMoveEvent evt)
         {
+            if (!dragElement.ClassListContains(movableUssClassName))
+                return;
+
             SliderKey sliderKey = SliderKey.None;
             bool isHorizontal = direction == SliderDirection.Horizontal;
 
@@ -634,6 +658,14 @@ namespace UnityEngine.UIElements
 
             ComputeValueFromKey(sliderKey, evt.shiftKey);
             evt.StopPropagation();
+            focusController?.IgnoreEvent(evt);
+        }
+
+        void OnNavigationSubmit(NavigationSubmitEvent evt)
+        {
+            if (m_IsEditingTextField)
+                return;
+            dragElement.EnableInClassList(movableUssClassName, !dragElement.ClassListContains(movableUssClassName));
         }
 
         internal virtual void ComputeValueAndDirectionFromClick(float sliderLength, float dragElementLength, float dragElementPos, float dragElementLastPos)
@@ -784,25 +816,26 @@ namespace UnityEngine.UIElements
 
             if (fillElement == null)
             {
-                fillElement = new VisualElement { name = "unity-fill", usageHints = UsageHints.DynamicColor };
+                fillElement = new VisualElement { name = k_FillElementName, usageHints = UsageHints.DynamicColor };
                 fillElement.AddToClassList(fillUssClassName);
                 trackElement.Add(fillElement);
             }
 
             float inverseNormalizedValue = 1.0f - normalizedValue;
+            var valuePercent = Length.Percent(inverseNormalizedValue * 100.0f);
             if (direction == SliderDirection.Vertical)
             {
                 fillElement.style.right = 0;
                 fillElement.style.left = 0;
-                fillElement.style.bottom = 0;
-                fillElement.style.top = Length.Percent(inverseNormalizedValue * 100.0f);
+                fillElement.style.bottom = inverted ? valuePercent : 0;
+                fillElement.style.top = inverted ? 0 : valuePercent;
             }
             else
             {
                 fillElement.style.top = 0;
                 fillElement.style.bottom = 0;
-                fillElement.style.left = 0;
-                fillElement.style.right = Length.Percent(inverseNormalizedValue * 100.0f);
+                fillElement.style.left = inverted ? valuePercent : 0;
+                fillElement.style.right = inverted ? 0 : valuePercent;
             }
         }
 
@@ -836,7 +869,6 @@ namespace UnityEngine.UIElements
                 {
                     inputTextField = new TextField() { name = "unity-text-field" };
                     inputTextField.AddToClassList(textFieldClassName);
-                    inputTextField.RegisterCallback<NavigationMoveEvent>(OnInputNavigationMoveEvent, TrickleDown.TrickleDown);
                     inputTextField.RegisterValueChangedCallback(OnTextFieldValueChange);
                     inputTextField.RegisterCallback<FocusInEvent>(OnTextFieldFocusIn);
                     inputTextField.RegisterCallback<FocusOutEvent>(OnTextFieldFocusOut);
@@ -849,7 +881,6 @@ namespace UnityEngine.UIElements
                 if (inputTextField.panel != null)
                     inputTextField.RemoveFromHierarchy();
 
-                inputTextField.UnregisterCallback<NavigationMoveEvent>(OnInputNavigationMoveEvent);
                 inputTextField.UnregisterValueChangedCallback(OnTextFieldValueChange);
                 inputTextField.UnregisterCallback<FocusInEvent>(OnTextFieldFocusIn);
                 inputTextField.UnregisterCallback<FocusOutEvent>(OnTextFieldFocusOut);
@@ -865,6 +896,10 @@ namespace UnityEngine.UIElements
             inputTextField.SetValueWithoutNotify(String.Format(CultureInfo.InvariantCulture, "{0:g7}", value));
         }
 
+        void OnFocusIn(FocusInEvent evt) => dragElement.AddToClassList(movableUssClassName);
+
+        void OnFocusOut(FocusOutEvent evt) => dragElement.RemoveFromClassList(movableUssClassName);
+
         private void OnTextFieldFocusIn(FocusInEvent evt)
         {
             m_IsEditingTextField = true;
@@ -874,12 +909,6 @@ namespace UnityEngine.UIElements
         {
             m_IsEditingTextField = false;
             UpdateTextFieldValue();
-        }
-
-        private void OnInputNavigationMoveEvent(NavigationMoveEvent evt)
-        {
-            // The input field should not do any navigation when using the arrow keys.
-            evt.StopPropagation();
         }
 
         void OnTextFieldValueChange(ChangeEvent<string> evt)

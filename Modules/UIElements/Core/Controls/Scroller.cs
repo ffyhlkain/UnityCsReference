@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using Unity.Properties;
 
 namespace UnityEngine.UIElements
@@ -11,6 +12,15 @@ namespace UnityEngine.UIElements
     /// <summary>
     /// A vertical or horizontal scrollbar. For more information, refer to [[wiki:UIE-uxml-element-scroller|UXML element Scroller]].
     /// </summary>
+    /// <remarks>
+    /// Each ScrollView has a Scroller for each axis, controlled by <see cref="ScrollerVisibility"/>. For more information, refer to <see cref="ScrollView"/>.
+    /// If a Scroller is used in ScrollView, its <see cref="highValue"/> and <see cref="lowValue"/> are automatically overridden to match the ScrollView content size on <see cref="GeometryChangedEvent"/>.
+    /// A Scroller contains a <see cref="Slider"/> and two <see cref="RepeatButton"/>s for scrolling.
+    /// </remarks>
+    /// <example>
+    /// The following example creates a scroller independently from a ScrollView:
+    /// <code source="../../../../Modules/UIElements/Tests/UIElementsExamples/Assets/Examples/Scroller_Example.cs"/>
+    /// </example>
     public class Scroller : VisualElement
     {
         internal static readonly BindingId valueProperty = nameof(value);
@@ -37,6 +47,18 @@ namespace UnityEngine.UIElements
         [UnityEngine.Internal.ExcludeFromDocs, Serializable]
         public new class UxmlSerializedData : VisualElement.UxmlSerializedData
         {
+            [Conditional("UNITY_EDITOR")]
+            public new static void Register()
+            {
+                UxmlDescriptionCache.RegisterType(typeof(UxmlSerializedData), new UxmlAttributeNames[]
+                {
+                    new(nameof(lowValue), "low-value", null, "lowValue"),
+                    new(nameof(highValue), "high-value", null, "highValue"),
+                    new(nameof(direction), "direction"),
+                    new(nameof(value), "value"),
+                });
+            }
+
             #pragma warning disable 649
             [UxmlAttribute("low-value", "lowValue")]
             [SerializeField] float lowValue;

@@ -34,6 +34,8 @@ namespace UnityEditor.Build
             "PS5",
             "EmbeddedLinux",
             "QNX",
+            "ReservedCFE",
+            "Kepler",
         };
 
         public static readonly NamedBuildTarget Unknown = new NamedBuildTarget("");
@@ -121,6 +123,10 @@ namespace UnityEditor.Build
                     return new NamedBuildTarget("GameCoreXboxOne");
                 case BuildTargetGroup.PS5:
                     return new NamedBuildTarget("PS5");
+                case BuildTargetGroup.ReservedCFE:
+                    return new NamedBuildTarget("ReservedCFE");
+                case BuildTargetGroup.Kepler:
+                    return new NamedBuildTarget("Kepler");
             }
 
             throw new ArgumentException($"There is no a valid NamedBuildTarget for BuildTargetGroup '{buildTargetGroup}'");

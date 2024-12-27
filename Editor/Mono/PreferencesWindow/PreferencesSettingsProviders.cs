@@ -52,6 +52,7 @@ namespace UnityEditor
             public static readonly GUIContent autoSaveScenesBeforeBuilding = EditorGUIUtility.TrTextContent("Auto-save scenes before building");
             public static readonly GUIContent scriptChangesDuringPlay = EditorGUIUtility.TrTextContent("Script Changes While Playing");
             public static readonly GUIContent editorFont = EditorGUIUtility.TrTextContent("Editor Font");
+            public static readonly GUIContent editorTextRenderingMode = EditorGUIUtility.TrTextContent("Editor Default Text Rendering Mode");
             public static readonly GUIContent editorTextSharpness = EditorGUIUtility.TrTextContent("Editor Text Sharpness");
             public static readonly GUIContent editorSkin = EditorGUIUtility.TrTextContent("Editor Theme");
             public static readonly GUIContent[] editorSkinOptions = { EditorGUIUtility.TrTextContent("Light"), EditorGUIUtility.TrTextContent("Dark") };
@@ -86,7 +87,7 @@ namespace UnityEditor
 
             public static readonly GUIContent performBumpMapCheck = EditorGUIUtility.TrTextContent("Perform Bump Map Check", "Enables Bump Map Checks upon import of Materials. This checks that textures used in a normal map material slot are actually defined as normal maps.");
             public static readonly GUIContent enableExtendedLogging = EditorGUIUtility.TrTextContent("Timestamp Editor log entries", "Adds timestamp and thread Id to Editor.log messages.");
-            public static readonly GUIContent enableHelperBar = EditorGUIUtility.TrTextContent("Enable Helper Bar", "Enables Helper Bar in the status bar at the bottom of the main Unity Editor window.");
+            public static readonly GUIContent enableShortcutHelperBar = EditorGUIUtility.TrTextContent("Enable Shortcut Helper Bar", "Enables the Shortcut Helper Bar in the status bar at the bottom of the main Unity Editor window.");
             public static readonly GUIContent enablePlayModeTooltips = EditorGUIUtility.TrTextContent("Enable PlayMode Tooltips", "Enables tooltips in the editor while in play mode.");
             public static readonly GUIContent showSecondaryWindowsInTaskbar = EditorGUIUtility.TrTextContent("Show All Windows in Taskbar",
                 @"Enabling this setting allows undocked windows to be minimized in the OS taskbar.
@@ -204,6 +205,7 @@ By default, Windows will combine these under a single taskbar item.");
         private static SystemLanguage[] m_stableLanguages = { SystemLanguage.English };
         private bool m_EnableCompilerMessagesLocalization;
 
+        EditorTextRenderingMode m_EditorTextRenderingMode = EditorTextRenderingMode.SDF;
         private float m_EditorTextSharpness = 0.0f;
         private bool m_AllowAlphaNumericHierarchy = false;
         private PrefabStage.Mode m_DefaultPrefabModeFromHierarchy = PrefabStage.Mode.InContext;
@@ -541,11 +543,22 @@ By default, Windows will combine these under a single taskbar item.");
                     // Refresh skin to get new font
                     Unsupported.ClearSkinCache();
                     UnityEditor.EditorUtility.RequestScriptReload();
-                    InternalEditorUtility.RepaintAllViews();
+                    EditorApplication.RequestRepaintAllTexts(VersionChangeType.Layout | VersionChangeType.Repaint);
                 }
             }
 
-            m_EditorTextSharpness = EditorGUILayout.Slider(GeneralProperties.editorTextSharpness, m_EditorTextSharpness, -0.5f, 1.0f);
+            EditorGUI.BeginChangeCheck();
+            m_EditorTextRenderingMode = (EditorTextRenderingMode)EditorGUILayout.EnumPopup(GeneralProperties.editorTextRenderingMode, m_EditorTextRenderingMode);
+            if (EditorGUI.EndChangeCheck())
+            {
+                EditorPrefs.SetInt("EditorTextRenderingMode", (int)m_EditorTextRenderingMode);
+                EditorTextSettings.currentEditorTextRenderingMode = m_EditorTextRenderingMode;
+                EditorApplication.RequestRepaintAllTexts(VersionChangeType.Layout | VersionChangeType.Repaint);
+                EditorApplication.UpdateEditorTextRenderingMode(m_EditorTextRenderingMode);
+            }
+
+            if (m_EditorTextRenderingMode == EditorTextRenderingMode.SDF)
+                m_EditorTextSharpness = EditorGUILayout.Slider(GeneralProperties.editorTextSharpness, m_EditorTextSharpness, -0.5f, 1.0f);
 
             if (InternalEditorUtility.IsGpuDeviceSelectionSupported())
             {
@@ -748,14 +761,15 @@ By default, Windows will combine these under a single taskbar item.");
 
         void DrawEnableHelperBar()
         {
-            const string helperBarKeyName = "EnableHelperBar";
-            var enableHelperBar = EditorPrefs.GetBool(helperBarKeyName, false);
+            const string shortcutHelperBarKeyName = "EnableShortcutHelperBar";
+            var enableShortcutHelperBar = EditorPrefs.GetBool(shortcutHelperBarKeyName, false);
 
             EditorGUI.BeginChangeCheck();
-            enableHelperBar = EditorGUILayout.Toggle(GeneralProperties.enableHelperBar, enableHelperBar);
+            enableShortcutHelperBar = EditorGUILayout.Toggle(GeneralProperties.enableShortcutHelperBar, enableShortcutHelperBar);
             if (EditorGUI.EndChangeCheck())
             {
-                EditorPrefs.SetBool(helperBarKeyName, enableHelperBar);
+                EditorPrefs.SetBool(shortcutHelperBarKeyName, enableShortcutHelperBar);
+                ShortcutManagement.ShortcutHelperBarUtility.RemoveAppStatusBarClient();
             }
         }
 
@@ -1176,8 +1190,10 @@ By default, Windows will combine these under a single taskbar item.");
             EditorPrefs.SetString("Editor.kEditorLocale", m_SelectedLanguage);
             EditorPrefs.SetBool("Editor.kEnableCompilerMessagesLocalization", m_EnableCompilerMessagesLocalization);
 
+            EditorPrefs.SetInt("EditorTextRenderingMode", (int)m_EditorTextRenderingMode);
             EditorPrefs.SetFloat($"EditorTextSharpness_{EditorResources.GetFont(FontDef.Style.Normal).name}", m_EditorTextSharpness);
-            EditorApplication.RequestRepaintAllTexts();
+            EditorTextSettings.currentEditorTextRenderingMode = m_EditorTextRenderingMode;
+            EditorApplication.RequestRepaintAllTexts(VersionChangeType.Repaint);
 
             EditorPrefs.SetBool("AllowAlphaNumericHierarchy", m_AllowAlphaNumericHierarchy);
             EditorPrefs.SetInt("DefaultPrefabModeFromHierarchy", (int)m_DefaultPrefabModeFromHierarchy);
@@ -1267,6 +1283,7 @@ By default, Windows will combine these under a single taskbar item.");
             m_EnableEditorLocalization = EditorPrefs.GetBool("Editor.kEnableEditorLocalization", true);
             m_SelectedLanguage = EditorPrefs.GetString("Editor.kEditorLocale", LocalizationDatabase.GetDefaultEditorLanguage().ToString());
             m_EnableCompilerMessagesLocalization = EditorPrefs.GetBool("Editor.kEnableCompilerMessagesLocalization", false);
+            m_EditorTextRenderingMode = (EditorTextRenderingMode)EditorPrefs.GetInt("EditorTextRenderingMode", (int)EditorTextRenderingMode.SDF);
             m_EditorTextSharpness = EditorPrefs.GetFloat($"EditorTextSharpness_{EditorResources.GetFont(FontDef.Style.Normal).name}", 0.0f);
             EditorTextSettings.SetCurrentEditorSharpness(m_EditorTextSharpness);
 

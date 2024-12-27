@@ -120,17 +120,40 @@ namespace UnityEditor
     [Flags]
     public enum iOSBackgroundMode: uint
     {
-        None = 0,
-        Audio = 1 << 0,
-        Location = 1 << 1,
-        VOIP = 1 << 2,
-        NewsstandContent = 1 << 3,
-        ExternalAccessory = 1 << 4,
-        BluetoothCentral = 1 << 5,
-        BluetoothPeripheral = 1 << 6,
-        Fetch = 1 << 7,
-        RemoteNotification = 1 << 8,
-        Processing = 1 << 9,
+        None                            = 0,
+        AudioAirplayPiP                 = 1 << 0,
+        LocationUpdates                 = 1 << 1,
+        VoiceOverIP                     = 1 << 2,
+        NewsstandDownloads              = 1 << 3,
+        ExternalAccessoryCommunication  = 1 << 4,
+        UsesBluetoothLEAccessory        = 1 << 5,
+        ActsAsABluetoothLEAccessory     = 1 << 6,
+        BackgroundFetch                 = 1 << 7,
+        RemoteNotifications             = 1 << 8,
+        Processing                      = 1 << 9,
+        NearbyInteraction               = 1 << 10,
+        NetworkAuthentication           = 1 << 11,
+        PushToTalk                      = 1 << 12,
+
+        // Obsolete/renamed values
+        [Obsolete("iOSBackgroundMode.Audio has been deprecated. Use AudioAirplayPiP instead (UnityUpgradable) -> AudioAirplayPiP", true)]
+        Audio                           = AudioAirplayPiP,
+        [Obsolete("iOSBackgroundMode.Location has been deprecated. Use LocationUpdates instead (UnityUpgradable) -> LocationUpdates", true)]
+        Location                        = LocationUpdates,
+        [Obsolete("iOSBackgroundMode.VoIP has been deprecated. Use VoiceOverIP instead (UnityUpgradable) -> VoiceOverIP", true)]
+        VoIP                            = VoiceOverIP,
+        [Obsolete("iOSBackgroundMode.NewsstandContent has been deprecated. Use NewsstandDownloads instead (UnityUpgradable) -> NewsstandDownloads", true)]
+        NewsstandContent                = NewsstandDownloads,
+        [Obsolete("iOSBackgroundMode.ExternalAccessory has been deprecated. Use ExternalAccessoryCommunication instead (UnityUpgradable) -> ExternalAccessoryCommunication", true)]
+        ExternalAccessory               = ExternalAccessoryCommunication,
+        [Obsolete("iOSBackgroundMode.BluetoothCentral has been deprecated. Use UsesBluetoothLEAccessory instead (UnityUpgradable) -> UsesBluetoothLEAccessory", true)]
+        BluetoothCentral                = UsesBluetoothLEAccessory,
+        [Obsolete("iOSBackgroundMode.BluetoothPeripheral has been deprecated. Use ActsAsABluetoothLEAccessory instead (UnityUpgradable) -> ActsAsABluetoothLEAccessory", true)]
+        BluetoothPeripheral             = ActsAsABluetoothLEAccessory,
+        [Obsolete("iOSBackgroundMode.Fetch has been deprecated. Use BackgroundFetch instead (UnityUpgradable) -> BackgroundFetch", true)]
+        Fetch                           = BackgroundFetch,
+        [Obsolete("iOSBackgroundMode.RemoteNotification has been deprecated. Use RemoteNotifications instead (UnityUpgradable) -> RemoteNotifications", true)]
+        RemoteNotification              = RemoteNotifications,
     }
 
     public enum iOSLaunchScreenImageType
@@ -179,40 +202,48 @@ namespace UnityEditor
     [NativeHeader("Editor/Src/PlayerSettingsIOS.bindings.h")]
     internal partial class iOSDeviceRequirementGroup
     {
+        private PlayerSettings m_PlayerSettings;
         private string m_VariantName;
 
         [FreeFunction("PlayerSettingsIOSBindings::SetOrAddDeviceRequirementForVariantNameImpl")]
-        extern private static void SetOrAddDeviceRequirementForVariantNameImpl(string name, int index, [Unmarshalled] string[] keys, [Unmarshalled] string[] values);
+        extern private static void SetOrAddDeviceRequirementForVariantNameImpl(PlayerSettings playerSettings, string name, int index, [Unmarshalled] string[] keys, [Unmarshalled] string[] values);
 
-        [NativeMethod(Name = "GetIOSDeviceRequirementCountForVariantName")]
-        [StaticAccessor("GetPlayerSettings()", StaticAccessorType.Dot)]
-        extern private static int GetCountForVariantImpl(string name);
-
-        //[NativeMethod("RemoveIOSDeviceRequirementForVariantName")]
-        [NativeMethod(Name = "RemoveIOSDeviceRequirementForVariantName")]
-        [StaticAccessor("GetPlayerSettings()", StaticAccessorType.Dot)]
-        extern private static void RemoveAtImpl(string name, int index);
+        [FreeFunction("PlayerSettingsIOSBindings::RemoveIOSDeviceRequirementForVariantNameImpl")]
+        extern private static void RemoveIOSDeviceRequirementForVariantNameImpl(PlayerSettings playerSettings, string name, int index);
 
         internal iOSDeviceRequirementGroup(string variantName)
+            : this(null, variantName)
+        {}
+
+        internal iOSDeviceRequirementGroup(PlayerSettings playerSettings, string variantName)
         {
+            m_PlayerSettings = playerSettings;
             m_VariantName = variantName;
         }
 
         [FreeFunction("PlayerSettingsIOSBindings::GetDeviceRequirementForVariantNameImpl")]
-        extern private static void GetDeviceRequirementForVariantNameImplInternal(string name, int index, [Out] string[] keys, [Out] string[] values);
+        extern private static void GetDeviceRequirementForVariantNameImplInternal(PlayerSettings playerSettings, string name, int index, [Out] string[] keys, [Out] string[] values);
 
         [FreeFunction("PlayerSettingsIOSBindings::GetDeviceRequirementForVariantCount")]
-        extern private static int GetDeviceRequirementForVariantCount(string name, int index);
+        extern private static int GetDeviceRequirementForVariantCount(PlayerSettings playerSettings, string name, int index);
 
-        private static void GetDeviceRequirementForVariantNameImpl(string name, int index, out string[] keys, out string[] values)
+        private static void GetDeviceRequirementForVariantNameImpl(PlayerSettings playerSettings, string name, int index, out string[] keys, out string[] values)
         {
-            int requirementCount = GetDeviceRequirementForVariantCount(name, index);
+            int requirementCount = GetDeviceRequirementForVariantCount(playerSettings, name, index);
             keys = new string[requirementCount];
             values = new string[requirementCount];
-            GetDeviceRequirementForVariantNameImplInternal(name, index, keys, values);
+            GetDeviceRequirementForVariantNameImplInternal(playerSettings, name, index, keys, values);
         }
 
-        public int count { get { return GetCountForVariantImpl(m_VariantName); } }
+        public int count
+        {
+            get
+            {
+                return (m_PlayerSettings != null)
+                    ? PlayerSettings.iOS.GetIOSDeviceRequirementCountForVariantName_Internal(m_PlayerSettings, m_VariantName)
+                    : PlayerSettings.iOS.GetIOSDeviceRequirementCountForVariantName(m_VariantName);
+            }
+        }
 
         public iOSDeviceRequirement this[int index]
         {
@@ -220,7 +251,7 @@ namespace UnityEditor
             {
                 string[] keys;
                 string[] values;
-                GetDeviceRequirementForVariantNameImpl(m_VariantName, index, out keys, out values);
+                GetDeviceRequirementForVariantNameImpl(m_PlayerSettings, m_VariantName, index, out keys, out values);
                 var result = new iOSDeviceRequirement();
                 for (int i = 0; i < keys.Length; ++i)
                 {
@@ -230,19 +261,19 @@ namespace UnityEditor
             }
             set
             {
-                SetOrAddDeviceRequirementForVariantNameImpl(m_VariantName, index, value.values.Keys.ToArray(),
+                SetOrAddDeviceRequirementForVariantNameImpl(m_PlayerSettings, m_VariantName, index, value.values.Keys.ToArray(),
                     value.values.Values.ToArray());
             }
         }
 
         public void RemoveAt(int index)
         {
-            RemoveAtImpl(m_VariantName, index);
+            RemoveIOSDeviceRequirementForVariantNameImpl(m_PlayerSettings, m_VariantName, index);
         }
 
         public void Add(iOSDeviceRequirement requirement)
         {
-            SetOrAddDeviceRequirementForVariantNameImpl(m_VariantName, -1, requirement.values.Keys.ToArray(),
+            SetOrAddDeviceRequirementForVariantNameImpl(m_PlayerSettings, m_VariantName, -1, requirement.values.Keys.ToArray(),
                 requirement.values.Values.ToArray());
         }
     }
@@ -609,12 +640,20 @@ namespace UnityEditor
             // will be public
             [NativeMethod(Name = "GetIOSVariantsWithDeviceRequirements")]
             extern internal static string[] GetAssetBundleVariantsWithDeviceRequirements();
+            [NativeMethod(Name = "GetIOSVariantsWithDeviceRequirements_Internal")]
+            [StaticAccessor("PlayerSettings", StaticAccessorType.DoubleColon)]
+            extern internal static string[] GetAssetBundleVariantsWithDeviceRequirements_Internal(PlayerSettings instance);
 
-            private static extern int GetIOSDeviceRequirementCountForVariantName(string name);
+            internal static extern int GetIOSDeviceRequirementCountForVariantName(string name);
+            internal static extern int GetIOSDeviceRequirementCountForVariantName_Internal(PlayerSettings instance, string name);
 
             private static bool CheckAssetBundleVariantHasDeviceRequirements(string name)
             {
                 return GetIOSDeviceRequirementCountForVariantName(name) > 0;
+            }
+            private static bool CheckAssetBundleVariantHasDeviceRequirements_Internal(PlayerSettings instance, string name)
+            {
+                return GetIOSDeviceRequirementCountForVariantName_Internal(instance, name) > 0;
             }
 
             [StaticAccessor("GetPlayerSettings().GetEditorOnly()", StaticAccessorType.Dot)]
@@ -658,6 +697,12 @@ namespace UnityEditor
                     return null;
                 return new iOSDeviceRequirementGroup(name);
             }
+            internal static iOSDeviceRequirementGroup GetDeviceRequirementsForAssetBundleVariant_Internal(PlayerSettings instance, string name)
+            {
+                if (!CheckAssetBundleVariantHasDeviceRequirements_Internal(instance, name))
+                    return null;
+                return new iOSDeviceRequirementGroup(instance, name);
+            }
 
             // will be public
             internal static void RemoveDeviceRequirementsForAssetBundleVariant(string name)
@@ -671,6 +716,10 @@ namespace UnityEditor
             internal static iOSDeviceRequirementGroup AddDeviceRequirementsForAssetBundleVariant(string name)
             {
                 return new iOSDeviceRequirementGroup(name);
+            }
+            internal static iOSDeviceRequirementGroup AddDeviceRequirementsForAssetBundleVariant_Internal(PlayerSettings instance, string name)
+            {
+                return new iOSDeviceRequirementGroup(instance, name);
             }
 
             [NativeProperty("iOSURLSchemes", false, TargetType.Function)]

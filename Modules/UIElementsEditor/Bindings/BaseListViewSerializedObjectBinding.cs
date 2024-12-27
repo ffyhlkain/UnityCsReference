@@ -49,9 +49,12 @@ namespace UnityEditor.UIElements.Bindings
         public void RefreshProperties()
         {
             var property = ArrayProperty.Copy();
+            var arrayIterator = ArrayProperty.Copy();
             var endProperty = property.GetEndProperty();
 
-            property.NextVisible(true); // Expand the first child.
+            // Using Next instead of NextVisible to cover [HideInInspector] cases.
+            property = ArrayProperty.Copy();
+            property.Next(true); // Expand the first child.
 
             properties = new List<SerializedProperty>();
             do
@@ -62,13 +65,17 @@ namespace UnityEditor.UIElements.Bindings
                 if (property.propertyType == SerializedPropertyType.ArraySize)
                 {
                     ArraySize = property.Copy();
-                }
-                else
-                {
-                    properties.Add(property.Copy());
+
+                    // Rely on the enumerator (it uses GetArrayElementAtIndex)
+                    foreach (SerializedProperty serializedProperty in arrayIterator)
+                    {
+                        properties.Add(serializedProperty.Copy());
+                    }
+
+                    break;
                 }
             }
-            while (property.NextVisible(false));   // Never expand children.
+            while (property.Next(true));
 
             if (ArraySize == null)
             {
@@ -210,6 +217,18 @@ namespace UnityEditor.UIElements.Bindings
 
     abstract class BaseListViewSerializedObjectBinding : SerializedObjectBindingBase
     {
+        class TrackedIndex
+        {
+            public int Index { get; set; }
+            public int HashCodeForPropertyPath { get; set; }
+
+            public void Reset()
+            {
+                Index = -1;
+                HashCodeForPropertyPath = 0;
+            }
+        }
+
         protected SerializedObjectList m_DataList;
         protected EventCallback<DragUpdatedEvent> m_DragUpdatedCallback;
         protected EventCallback<DragPerformEvent> m_DragPerformCallback;
@@ -218,7 +237,6 @@ namespace UnityEditor.UIElements.Bindings
         protected Action<VisualElement, int> m_DefaultBindItem;
         protected Action<VisualElement, int> m_DefaultUnbindItem;
 
-        SerializedProperty m_ArraySize;
         int m_ListViewArraySize;
 
         BaseListView baseListView
@@ -255,7 +273,7 @@ namespace UnityEditor.UIElements.Bindings
             ValidateObjectReferences(obj =>
             {
                 baseListView.viewController.AddItems(1);
-                m_DataList.ArrayProperty.GetArrayElementAtIndex(m_DataList.ArraySize.intValue - 1).objectReferenceValue = obj;
+                m_DataList.ArrayProperty.GetArrayElementAtIndex(m_DataList.arraySize - 1).objectReferenceValue = obj;
                 m_DataList.ApplyChanges();
             });
         }
@@ -284,7 +302,6 @@ namespace UnityEditor.UIElements.Bindings
 
             ResetContext();
             m_DataList = null;
-            m_ArraySize = null;
             m_ListViewArraySize = -1;
 
             ClearView();
@@ -309,7 +326,7 @@ namespace UnityEditor.UIElements.Bindings
                     return new BindingResult(BindingStatus.Pending);
                 }
 
-                var currentArraySize = m_ArraySize.intValue;
+                var currentArraySize = m_DataList.arraySize;
                 var listViewShowsMixedValue = baseListView.arraySizeField is {showMixedValue: true};
                 if (listViewShowsMixedValue || baseListView.arraySizeField == null)
                     return default;
@@ -357,8 +374,7 @@ namespace UnityEditor.UIElements.Bindings
         private void UpdateArraySize()
         {
             m_DataList.RefreshProperties();
-            m_ArraySize = m_DataList.ArraySize;
-            m_ListViewArraySize = m_ArraySize.intValue;
+            m_ListViewArraySize = m_DataList.arraySize;
 
             var isOverMaxMultiEditLimit = m_DataList.IsOverMaxMultiEditLimit;
             baseListView.footer?.SetEnabled(!isOverMaxMultiEditLimit);
@@ -366,8 +382,8 @@ namespace UnityEditor.UIElements.Bindings
 
             baseListView.RefreshItems();
 
-            if (baseListView.arraySizeField != null)
-                baseListView.arraySizeField.showMixedValue = m_ArraySize.hasMultipleDifferentValues;
+            if (baseListView.arraySizeField != null && m_DataList.ArraySize != null)
+                baseListView.arraySizeField.showMixedValue = m_DataList.ArraySize.hasMultipleDifferentValues;
         }
 
         public static bool CreateBind(BaseListView baseListView,
@@ -396,11 +412,10 @@ namespace UnityEditor.UIElements.Bindings
             SerializedProperty prop)
         {
             m_DataList = new SerializedObjectList(prop);
-            m_ArraySize = m_DataList.ArraySize;
-            m_ListViewArraySize = m_DataList.ArraySize.intValue;
+            m_ListViewArraySize = m_DataList.arraySize;
 
             SetView(targetList);
-            SetContext(context, m_ArraySize);
+            SetContext(context, m_DataList.ArraySize);
 
             targetList.RefreshItems();
         }
@@ -458,7 +473,7 @@ namespace UnityEditor.UIElements.Bindings
 
         protected void BindListViewItem(VisualElement ve, string propertyPath)
         {
-            if (m_ListViewArraySize != -1 && m_ArraySize.intValue != m_ListViewArraySize)
+            if (m_ListViewArraySize != -1 && m_DataList.arraySize != m_ListViewArraySize)
             {
                 // We need to wait for array size to be updated, which triggers a refresh anyway.
                 return;
@@ -482,7 +497,7 @@ namespace UnityEditor.UIElements.Bindings
 
         private void UnbindListViewItem(VisualElement ve, int index)
         {
-            if (m_ListViewArraySize != -1 && m_ArraySize.intValue != m_ListViewArraySize)
+            if (m_ListViewArraySize != -1 && m_DataList.arraySize != m_ListViewArraySize)
             {
                 // We need to wait for array size to be updated, which triggers a refresh anyway.
                 return;

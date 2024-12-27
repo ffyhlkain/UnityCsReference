@@ -7,6 +7,7 @@ using UnityEngine;
 using UnityEngine.Scripting;
 using System.Collections.Generic;
 using UnityEditor.Build.Profile;
+using UnityEditor.Modules;
 using System;
 
 namespace UnityEditor.Build
@@ -32,13 +33,16 @@ namespace UnityEditor.Build
         [RequiredByNativeCode]
         public static string[] GetBuildProfileScriptDefines()
         {
+            // Profile scripting defines are cached when profile is first activated
+            // and when the domain is unloaded. Workaround for active build profile
+            // not reachable when AssetDatabase.IsReadOnly() is true.
             if (!EditorUserBuildSettings.isBuildProfileAvailable)
-                return EditorUserBuildSettings.GetActiveProfileYamlScriptingDefines();
+                return EditorUserBuildSettings.GetActiveProfileScriptingDefines();
 
-            if (BuildProfileContext.instance.activeProfile == null)
-                return Array.Empty<string>();
+            var profile = EditorUserBuildSettings.activeBuildProfile;
+            if (profile == null)
+                return EditorUserBuildSettings.GetActiveProfileScriptingDefines();
 
-            var profile = BuildProfileContext.instance.activeProfile;
             return profile.scriptingDefines;
         }
     }

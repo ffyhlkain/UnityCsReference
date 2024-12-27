@@ -156,7 +156,6 @@ namespace UnityEditor
         ListViewState m_ListView;
         string m_ActiveText = "";
         StringBuilder m_CopyString;
-        private int m_LastPingedEntryRow = -1;
         bool m_DevBuild;
         int m_CallstackTextStart = 0;
         private Mode m_ActiveMode = Mode.None;
@@ -457,18 +456,11 @@ namespace UnityEditor
                 m_CallstackTextStart = entry.callstackTextStartUTF16;
                 var entryRow = LogEntries.GetEntryRowIndex(entry.globalLineIndex, m_IndexHintCache);
                 m_IndexHintCache = entryRow;
-                // ping object referred by the log entry
-                if (entry.instanceID != 0 && m_LastPingedEntryRow != entryRow)
-                {
-                    EditorGUIUtility.PingObject(entry.instanceID);
-                    m_LastPingedEntryRow = entryRow;
-                }
             }
             else
             {
                 m_CallstackTextStart = 0;
                 m_ActiveText = string.Empty;
-                m_LastPingedEntryRow = -1;
                 m_ListView.row = -1;
                 m_CopyString.Clear();
                 m_ActiveMode = Mode.None;
@@ -637,8 +629,9 @@ namespace UnityEditor
                             selectedRow = m_ListView.row;
                             DestroyLatestRestoreEntry();
                             LogEntry entry = new LogEntry();
-                            LogEntries.GetEntryInternal(m_ListView.row, entry);
-                            m_LastActiveEntryIndex = entry.globalLineIndex;
+                            LogEntries.GetEntryInternal(el.row, entry);
+                            if (entry.instanceID != 0 && e.clickCount != 2)
+                                EditorGUIUtility.PingObject(entry.instanceID);
                             if (e.clickCount == 2)
                                 openSelectedItem = true;
                         }
@@ -1205,6 +1198,18 @@ namespace UnityEditor
                 menu.AddItem(EditorGUIUtility.TrTextContent("Stack Trace Logging/All/" + stackTraceLogType), (StackTraceLogType)stackTraceLogTypeForAll == stackTraceLogType,
                     ToggleLogStackTracesForAll, stackTraceLogType);
             }
+        }
+
+        internal static void ClearConsoleOnRecompile()
+        {
+            // During build process, there are multiple compilation events that can trigger console clearing
+            // We don't want to lose the log entries during build process so we re-enable the flag only when editor is not building
+            // For clearing on build we have a separate option
+            if (HasFlag(ConsoleFlags.ClearOnRecompile) && !BuildPipeline.isBuildingPlayer)
+            {
+                LogEntries.Clear();
+            }
+
         }
 
         private void SetFilter(string filteringText)

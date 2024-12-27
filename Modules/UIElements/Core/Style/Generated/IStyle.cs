@@ -16,7 +16,7 @@ namespace UnityEngine.UIElements
     /// </summary>
     /// <remarks>
     /// Reading properties from this object will read from the inline style data for this element.
-    /// To read the style data computed for the element use <see cref="IComputedStyle"/> interface.
+    /// To read the style data computed for the element use <see cref="IStyle"/> interface.
     /// Writing to a property will mask the value coming from USS with the provided value however other properties will still match the values from USS.
     /// </remarks>
     public partial interface IStyle
@@ -54,7 +54,7 @@ namespace UnityEngine.UIElements
         /// </summary>
         StyleBackgroundRepeat backgroundRepeat { get; set; }
         /// <summary>
-        /// Background image size value.
+        /// Background image size value. Transitions are fully supported only when using size in pixels or percentages, such as pixel-to-pixel or percentage-to-percentage transitions.
         /// </summary>
         StyleBackgroundSize backgroundSize { get; set; }
         /// <summary>
@@ -289,6 +289,10 @@ namespace UnityEngine.UIElements
         /// Tinting color for the element's backgroundImage.
         /// </summary>
         StyleColor unityBackgroundImageTintColor { get; set; }
+        /// <summary>
+        /// TextElement editor rendering mode.
+        /// </summary>
+        StyleEnum<EditorTextRenderingMode> unityEditorTextRenderingMode { get; set; }
         /// <summary>
         /// Font to draw the element's text, defined as a Font object.
         /// </summary>

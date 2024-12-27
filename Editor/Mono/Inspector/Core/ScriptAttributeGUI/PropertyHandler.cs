@@ -96,20 +96,10 @@ namespace UnityEditor
                 return;
             }
 
-            if (attribute.applyToCollection)
-            {
-                // Do not apply this to array elements
-                if (!property.isArray)
-                    return;
-
-                if (!propertyType.IsArrayOrList())
-                {
-                    throw new NotSupportedException($"Cannot apply {nameof(attribute)} on a field of type {propertyType.Name}." +
-                        $"\nPlease use this attribute on a collection.");
-                }
-            }
-
-
+            // When `attribute.applyToCollection` is set to true, we need to early return for any non-collection fields within a collection.
+            // Collections and fields that are not part of a collection should comply with the attribute.
+            if (attribute.applyToCollection && !propertyType.IsArrayOrList() && property.propertyPath.Contains("["))
+                return;
 
             // Look for its drawer type of this attribute
             HandleDrawnType(property, attribute.GetType(), propertyType, field, attribute);
@@ -127,7 +117,7 @@ namespace UnityEditor
                     // Use PropertyDrawer on array elements, not on array itself.
                     // If there's a PropertyAttribute on an array, we want to apply it to the individual array elements instead.
                     // This is the only convenient way we can let the user apply PropertyDrawer attributes to elements inside an array.
-                    if (propertyType != null && propertyType.IsArrayOrList() && !attribute.applyToCollection)
+                    if (propertyType != null && propertyType.IsArrayOrList() && (attribute == null || !attribute.applyToCollection))
                         return;
 
                     var propertyDrawerForType = CreatePropertyDrawerWithDefaultObjectReferences(drawerType);
@@ -310,11 +300,7 @@ namespace UnityEditor
                 if (childrenAreExpanded)
                 {
                     SerializedProperty endProperty = prop.GetEndProperty();
-                    // Children need to be indented
-                    int prevIndent = EditorGUI.indentLevel;
-                    EditorGUI.indentLevel++;
-                    position = EditorGUI.IndentedRect(position);
-                    EditorGUI.indentLevel = prevIndent;
+
                     while (prop.NextVisible(childrenAreExpanded) && !SerializedProperty.EqualContents(prop, endProperty))
                     {
                         if (GUI.isInsideList && prop.depth <= EditorGUI.GetInsideListDepth())
@@ -446,7 +432,7 @@ namespace UnityEditor
 
             if (CanSearchProperty(property))
             {
-                menu.AddItem(new GUIContent("Search for same Property"), false, () => SearchProperty(property));
+                menu.AddItem(new GUIContent("Search Same Property Value"), false, () => SearchProperty(property));
                 if (property.propertyType == SerializedPropertyType.ObjectReference && property.objectReferenceValue)
                 {
                     menu.AddItem(new GUIContent($"Find references to {property.objectReferenceValue.GetType().Name} {property.objectReferenceValue.name}"), false, () => FindReferences(property.objectReferenceValue));

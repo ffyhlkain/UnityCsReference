@@ -82,7 +82,6 @@ namespace UnityEditor
             var renderingLayersProperty = serializedObject.FindProperty("m_RenderingLayers");
 
             Debug.Assert(layersProperty.arraySize == 32);
-            Debug.Assert(renderingLayersProperty.arraySize == 32);
 
             var tagsList = SetupTags(content, tagsProperty);
             var sortingLayers = SetupSortingLayers(content, sortingLayersProperty);
@@ -318,11 +317,19 @@ namespace UnityEditor
             listView.allowRemove = !tagManager.IsIndexReservedForDefaultRenderingLayer(renderingLayerCount - 1);
 
             var viewport = listView.Q<VisualElement>("unity-content-viewport");
-            viewport.Query<HelpBox>().Where(h => h.name == "MaximumSupportedRenderingLayers").ForEach(h => viewport.Remove(h));
+            ClearHelpBoxes(viewport);
 
             var maxRenderingLayers = RenderPipelineEditorUtility.GetMaxRenderingLayersFromSettings();
             AddInfoBoxesForMaximumValueRestriction(viewport, maxRenderingLayers);
             AddWarningMessageForUnsupportedLayers(viewport, maxRenderingLayers);
+        }
+
+        void ClearHelpBoxes(VisualElement viewport)
+        {
+            viewport
+                .Query<HelpBox>()
+                .Where(h => h.name == "MaximumSupportedRenderingLayers")
+                .ForEach(viewport.Remove);
         }
 
         void AddInfoBoxesForMaximumValueRestriction(VisualElement viewport, List<(int, string)> maxRenderingLayers)

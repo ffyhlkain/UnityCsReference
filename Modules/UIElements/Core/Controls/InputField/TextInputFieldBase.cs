@@ -47,6 +47,30 @@ namespace UnityEngine.UIElements
         [ExcludeFromDocs, Serializable]
         public new abstract class UxmlSerializedData : BaseField<TValueType>.UxmlSerializedData
         {
+            public new static void Register()
+            {
+                BaseField<TValueType>.UxmlSerializedData.Register();
+                UxmlDescriptionCache.RegisterType(typeof(UxmlSerializedData), new UxmlAttributeNames[]
+                {
+                    new (nameof(maxLength), "max-length", null, "maxLength"),
+                    new (nameof(isPasswordField), "password"),
+                    new (nameof(maskChar), "mask-character", null, "maskCharacter"),
+                    new (nameof(placeholderText), "placeholder-text"),
+                    new (nameof(hidePlaceholderOnFocus), "hide-placeholder-on-focus"),
+                    new (nameof(isReadOnly), "readonly"),
+                    new (nameof(isDelayed), "is-delayed"),
+                    new (nameof(verticalScrollerVisibility), "vertical-scroller-visibility"),
+                    new (nameof(selectAllOnMouseUp), "select-all-on-mouse-up"),
+                    new (nameof(selectAllOnFocus), "select-all-on-focus"),
+                    new (nameof(doubleClickSelectsWord), "select-word-by-double-click"),
+                    new (nameof(tripleClickSelectsLine), "select-line-by-triple-click"),
+                    new (nameof(emojiFallbackSupport), "emoji-fallback-support"),
+                    new (nameof(hideMobileInput), "hide-mobile-input"),
+                    new (nameof(keyboardType), "keyboard-type"),
+                    new (nameof(autoCorrection), "auto-correction"),
+                });
+            }
+
             #pragma warning disable 649
             [UxmlAttribute(obsoleteNames = new[] { "maxLength" })]
             [SerializeField] int maxLength;
@@ -331,6 +355,7 @@ namespace UnityEngine.UIElements
         }
 
         TextInputBase m_TextInputBase;
+        /// <undoc/>
         /// <summary>
         /// This is the text input visual element which presents the value in the field.
         /// </summary>
@@ -655,7 +680,8 @@ namespace UnityEngine.UIElements
         public string text
         {
             get => m_TextInputBase.text;
-            protected set => m_TextInputBase.text = value;
+            [VisibleToOtherModules("UnityEditor.UIBuilderModule")]
+            protected internal set => m_TextInputBase.text = value;
         }
 
         /// <summary>
@@ -821,6 +847,7 @@ namespace UnityEngine.UIElements
             m_TextInputBase.OnInputCustomStyleResolved(e);
         }
 
+        /// <undoc/>
         /// <summary>
         /// This is the input text base class visual representation.
         /// </summary>
@@ -880,6 +907,7 @@ namespace UnityEngine.UIElements
                 delegatesFocus = true;
 
                 textElement = new TextElement();
+                textElement.isInputField = true;
                 textElement.selection.isSelectable = true;
                 textEdition.isReadOnly = false;
                 textSelection.isSelectable = true;
@@ -894,7 +922,6 @@ namespace UnityEngine.UIElements
                 textEdition.UpdateTextFromValue += UpdateTextFromValue;
                 textEdition.MoveFocusToCompositeRoot += MoveFocusToCompositeRoot;
                 textEdition.GetDefaultValueType = GetDefaultValueType;
-
 
                 AddToClassList(inputUssClassName);
                 name = TextField.textInputUssName;
@@ -990,6 +1017,8 @@ namespace UnityEngine.UIElements
                    scrollOffset.y = 0;
                    UpdateScrollOffset();
                 }
+                if (textElement.hasFocus)
+                    textElement.uitkTextHandle.AddTextInfoToPermanentCache();
             }
 
             internal void SetMultiline()
@@ -1038,6 +1067,8 @@ namespace UnityEngine.UIElements
                     AddToClassList(multilineInputUssClassName);
                     textElement.AddToClassList(innerTextElementUssClassName);
                 }
+                if (textElement.hasFocus)
+                    textElement.uitkTextHandle.AddTextInfoToPermanentCache();
             }
 
             void ScrollViewOnGeometryChangedEvent(GeometryChangedEvent e)

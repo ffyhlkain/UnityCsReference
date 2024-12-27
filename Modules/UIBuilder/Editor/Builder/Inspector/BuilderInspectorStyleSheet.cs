@@ -13,11 +13,9 @@ namespace Unity.UI.Builder
         BuilderSelection m_Selection;
 
         VisualElement m_StyleSheetSection;
-        TextField m_NewSelectorNameNameField;
-        Button m_AddNewSelectorButton;
+        private BuilderNewSelectorField m_NewSelectorField;
         private VisualElement m_NewSelectorHelpTipsContainer;
 
-        static readonly string kHelpTooltipPath = BuilderConstants.UIBuilderPackagePath + "/Explorer/BuilderStyleSheetsNewSelectorHelpTips.uxml";
         private static readonly string kNewSelectorHelpTipsContainerName = "new-selector-help-tips-container";
 
         public VisualElement root => m_StyleSheetSection;
@@ -31,37 +29,28 @@ namespace Unity.UI.Builder
             m_Selection = inspector.selection;
 
             m_StyleSheetSection = m_Inspector.Q("shared-styles-controls");
-            m_NewSelectorNameNameField = m_Inspector.Q<TextField>("add-new-selector-field");
-            m_AddNewSelectorButton = m_Inspector.Q<Button>("add-new-selector-button");
+            m_NewSelectorField = m_Inspector.Q<BuilderNewSelectorField>("new-selector-field");
             m_NewSelectorHelpTipsContainer = m_Inspector.Q<VisualElement>(kNewSelectorHelpTipsContainerName);
 
-            m_AddNewSelectorButton.clickable.clicked += CreateNewSelector;
-            m_NewSelectorNameNameField.RegisterValueChangedCallback(OnCreateNewSelector);
-            m_NewSelectorNameNameField.isDelayed = true;
-            var helpTooltipTemplate = BuilderPackageUtilities.LoadAssetAtPath<VisualTreeAsset>(kHelpTooltipPath);
-            var helpTooltipContainer = helpTooltipTemplate.CloneTree();
-            m_NewSelectorHelpTipsContainer.Add(helpTooltipContainer);
+            m_NewSelectorField.RegisterCallback<NewSelectorSubmitEvent>(OnCreateNewSelector);
+            m_NewSelectorHelpTipsContainer.Add(BuilderStyleSheetsNewSelectorHelpTips.Create());
         }
 
-        void OnCreateNewSelector(ChangeEvent<string> evt)
+        void OnCreateNewSelector(NewSelectorSubmitEvent evt)
         {
-            CreateNewSelector(evt.newValue);
-        }
-
-        void CreateNewSelector()
-        {
-            if (string.IsNullOrEmpty(m_NewSelectorNameNameField.value))
-                return;
-
-            CreateNewSelector(m_NewSelectorNameNameField.value);
+            CreateNewSelector(evt.selectorStr);
         }
 
         void CreateNewSelector(string newSelectorString)
         {
-            m_NewSelectorNameNameField.SetValueWithoutNotify(string.Empty);
-
             Undo.RegisterCompleteObjectUndo(
                 styleSheet, BuilderConstants.AddNewSelectorUndoMessage);
+
+            if (!SelectorUtility.TryCreateSelector(newSelectorString, out var complexSelector, out var error))
+            {
+                Builder.ShowWarning(error);
+                return;
+            }
 
             BuilderSharedStyles.CreateNewSelector(
                 currentVisualElement.parent, styleSheet, newSelectorString);

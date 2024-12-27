@@ -25,6 +25,11 @@ namespace UnityEditor.Search
         int itemCount { get; }
         bool isSearchTemplate { get; }
 
+        internal bool IsTemporaryQuery()
+        {
+            return string.IsNullOrEmpty(filePath);
+        }
+
         string GetName();
         SearchTable GetSearchTable();
         SearchViewState GetViewState();
@@ -75,6 +80,11 @@ namespace UnityEditor.Search
         public string filePath { get; set; }
 
         public string guid => m_GUID;
+
+        public bool isTextOnlyQuery
+        {
+            get; set;
+        }
 
         public bool isSearchTemplate
         {

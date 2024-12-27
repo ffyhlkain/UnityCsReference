@@ -11,6 +11,7 @@ using System.IO;
 using System.Reflection;
 using System.Globalization;
 using System.Text.RegularExpressions;
+using UnityEditor.ShortcutManagement;
 using UnityEngine;
 using UnityEditorInternal;
 using UnityEngine.UIElements;
@@ -153,12 +154,30 @@ namespace UnityEditor.Search
         public static Texture2D GetAssetPreviewFromPath(SearchContext ctx, string path, Vector2 previewSize, FetchPreviewOptions previewOptions)
         {
             var assetType = AssetDatabase.GetMainAssetTypeAtPath(path);
-            if (assetType == typeof(SceneAsset))
+            var p = GetAssetPreviewFromTypeAtPath(ctx, assetType, path, previewSize, previewOptions);
+            if (p != null) return p;
+
+            var obj = AssetDatabase.LoadMainAssetAtPath(path);
+            return GetAssetPreviewFromObjectAtPath(ctx, obj, path, previewSize, previewOptions);
+        }
+
+        public static Texture2D GetAssetPreviewFromPath(SearchContext ctx, UnityEngine.Object obj, string path, Vector2 previewSize, FetchPreviewOptions previewOptions)
+        {
+            var assetType = obj.GetType();
+            var p = GetAssetPreviewFromTypeAtPath(ctx, assetType, path, previewSize, previewOptions);
+            if (p != null) return p;
+
+            return GetAssetPreviewFromObjectAtPath(ctx, obj, path, previewSize, previewOptions);
+        }
+
+        public static Texture2D GetAssetPreviewFromTypeAtPath(SearchContext ctx, Type type, string path, Vector2 previewSize, FetchPreviewOptions previewOptions)
+        {
+            if (type == typeof(SceneAsset))
                 return AssetDatabase.GetCachedIcon(path) as Texture2D;
 
             if (previewOptions.HasAny(FetchPreviewOptions.Normal))
             {
-                if (assetType == typeof(AudioClip))
+                if (type == typeof(AudioClip))
                     return GetAssetThumbnailFromPath(ctx, path);
 
                 try
@@ -175,14 +194,18 @@ namespace UnityEditor.Search
                 }
             }
 
-            if (!typeof(Texture).IsAssignableFrom(assetType))
+            if (typeof(Texture).IsAssignableFrom(type))
             {
                 var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
                 if (tex)
                     return tex;
             }
 
-            var obj = AssetDatabase.LoadMainAssetAtPath(path);
+            return null;
+        }
+
+        public static Texture2D GetAssetPreviewFromObjectAtPath(SearchContext ctx, UnityEngine.Object obj, string path, Vector2 previewSize, FetchPreviewOptions previewOptions)
+        {
             if (obj == null)
                 return null;
 
@@ -722,19 +745,20 @@ namespace UnityEditor.Search
 
 
 
+            var clientId = GetClientId(ctx);
             if (!options.HasAny(FetchPreviewOptions.Large))
             {
-                var preview = AssetPreview.GetAssetPreview(obj.GetInstanceID(), GetClientId(ctx));
+                var preview = AssetPreview.GetAssetPreview(obj.GetInstanceID(), clientId);
                 if (preview)
                     return preview;
 
-                if (AssetPreview.IsLoadingAssetPreview(obj.GetInstanceID()))
+                if (AssetPreview.IsLoadingAssetPreview(obj.GetInstanceID(), clientId))
                     return null;
             }
 
             var assetPath = SearchUtils.GetHierarchyAssetPath(obj, true);
             if (string.IsNullOrEmpty(assetPath))
-                return AssetPreview.GetAssetPreview(obj.GetInstanceID(), GetClientId(ctx)) ?? defaultThumbnail;
+                return AssetPreview.GetAssetPreview(obj.GetInstanceID(), clientId) ?? defaultThumbnail;
             return GetAssetPreviewFromPath(ctx, assetPath, previewSize, options);
         }
 
@@ -794,19 +818,73 @@ namespace UnityEditor.Search
             return TryParse(Convert.ToString(value), out number);
         }
 
-        internal const double DOUBLE_EPSILON = 0.0001;
+        // TODO Number: this is used when geenrating a query to have enough precision to find the asset.
+        // On U7 ToString("G") has different value than U6 hence why we use an explicit G8.
+        internal const string k_FloatQueryFormatter = "G8";
+        internal const string k_DoubleQueryFormatter = "G8";
+
+        // TODO Number: due to conversion from float to double, we need this epsilon. It is smaller than float epsilon for a reason.
+        internal const double k_DoubleEpsilon = 1E-7;
+        internal const float k_FloatEpsilon = 1E-8f;
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        public static float GetEpsilon(float a, float b)
+        {
+            // TODO Number: Dynamic epsilon: float have 7 significant digits. If we want to be able to do proper float comparison we need a dynamic epsilon that scales.
+            var max = Mathf.Max(Mathf.Abs(a), Mathf.Abs(b));
+            if (max < 1)
+                return k_FloatEpsilon;
+            if (max < 10)
+                return 1E-7f;
+            if (max < 100)
+                return 1E-6f;
+            if (max < 1000)
+                return 1E-5f;
+            if (max < 10000)
+                return 1E-4f;
+            if (max < 100000)
+                return 1E-3f;
+            if (max < 1000000)
+                return 1E-2f;
+            if (max < 10000000)
+                return 1E-1f;
+            return k_FloatEpsilon;
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        public static double GetEpsilon(double a, double b)
+        {
+            // TODO Number: All our comparisons are against float converted to double. Use an epsilon that accomodates this conversion
+            var max = Math.Max(Math.Abs(a), Math.Abs(b));
+            if (max < 1)
+                return k_DoubleEpsilon;
+            if (max < 10)
+                return 1E-7;
+            if (max < 100)
+                return 1E-6;
+            if (max < 1000)
+                return 1E-5;
+            if (max < 10000)
+                return 1E-4;
+            if (max < 100000)
+                return 1E-3;
+            if (max < 1000000)
+                return 1E-2;
+            if (max < 10000000)
+                return 1E-1;
+            return k_DoubleEpsilon;
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        public static bool Approximately(float a, float b)
+        {
+            return Mathf.Abs(b - a) < GetEpsilon(a, b);
+        }
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         internal static bool Approximately(double a, double b)
         {
-            // If a or b is zero, compare that the other is less or equal to epsilon.
-            // If neither a or b are 0, then find an epsilon that is good for
-            // comparing numbers at the maximum magnitude of a and b.
-            // Floating points have about 7 significant digits, so
-            // 1.000001f can be represented while 1.0000001f is rounded to zero,
-            // thus we could use an epsilon of 0.000001f for comparing values close to 1.
-            // We multiply this epsilon by the biggest magnitude of a and b.
-            return Math.Abs(b - a) < Math.Max(0.000001 * Math.Max(Math.Abs(a), Math.Abs(b)), double.Epsilon * 8);
+            return Math.Abs(a - b) < GetEpsilon(a, b);
         }
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
@@ -821,11 +899,11 @@ namespace UnityEditor.Search
                 case SearchIndexOperator.NotEqual:
                     return !Approximately(d1, d2);
                 case SearchIndexOperator.Greater:
-                    return d1 > d2;
+                    return d1 > d2 && !Approximately(d1, d2);
                 case SearchIndexOperator.GreaterOrEqual:
                     return d1 > d2 || Approximately(d1, d2);
                 case SearchIndexOperator.Less:
-                    return d1 < d2;
+                    return d1 < d2 && !Approximately(d1, d2);
                 case SearchIndexOperator.LessOrEqual:
                     return d1 < d2 || Approximately(d1, d2);
             }
@@ -838,19 +916,19 @@ namespace UnityEditor.Search
             switch (op)
             {
                 case SearchIndexOperator.Equal:
-                    return Mathf.Approximately(d1, d2);
+                    return Approximately(d1, d2);
                 case SearchIndexOperator.Contains:
-                    return Mathf.Approximately(d1, d2);
+                    return Approximately(d1, d2);
                 case SearchIndexOperator.NotEqual:
-                    return !Mathf.Approximately(d1, d2);
+                    return !Approximately(d1, d2);
                 case SearchIndexOperator.Greater:
-                    return d1 > d2;
+                    return d1 > d2 && !Approximately(d1, d2);
                 case SearchIndexOperator.GreaterOrEqual:
-                    return d1 > d2 || Mathf.Approximately(d1, d2);
+                    return d1 > d2 || Approximately(d1, d2);
                 case SearchIndexOperator.Less:
-                    return d1 < d2;
+                    return d1 < d2 && !Approximately(d1, d2);
                 case SearchIndexOperator.LessOrEqual:
-                    return d1 < d2 || Mathf.Approximately(d1, d2);
+                    return d1 < d2 || Approximately(d1, d2);
             }
             return false;
         }
@@ -952,7 +1030,7 @@ namespace UnityEditor.Search
 
         internal static void OpenPackageManager(string packageName)
         {
-            PackageManager.UI.PackageManagerWindow.SelectPackageAndPageStatic(packageName, PackageManager.UI.Internal.MyAssetsPage.k_Id);
+            PackageManager.UI.PackageManagerWindow.OpenAndSelectPackage(packageName, PackageManager.UI.Internal.MyAssetsPage.k_Id);
         }
 
         internal static char FastToLower(char c)
@@ -1053,7 +1131,7 @@ namespace UnityEditor.Search
         {
             if (float.IsNaN(f))
                 return string.Empty;
-            return f.ToString(CultureInfo.InvariantCulture);
+            return f.ToString(Utils.k_FloatQueryFormatter);
         }
 
         internal static string FormatIntString(in int i)
@@ -1318,7 +1396,7 @@ namespace UnityEditor.Search
 
         public static bool IsEditingTextField()
         {
-            return GUIUtility.textFieldInput || EditorGUI.IsEditingTextField();
+            return EditorGUI.IsEditingTextField();
         }
 
         static readonly Regex trimmer = new Regex(@"(\s\s+)|(\r\n|\r|\n)+");
@@ -1465,6 +1543,21 @@ namespace UnityEditor.Search
             }
 
             return hash1 + (hash2 * 1566083941);
+        }
+
+        public static ShortcutBinding GetShortcutBinding(string shortcutId)
+        {
+            ShortcutBinding shortcutBinding;
+            try
+            {
+                // Fetching shortcut can throw if not available
+                shortcutBinding = ShortcutManager.instance.GetShortcutBinding(shortcutId);
+            }
+            catch
+            {
+                shortcutBinding = ShortcutBinding.empty;
+            }
+            return shortcutBinding;
         }
     }
 

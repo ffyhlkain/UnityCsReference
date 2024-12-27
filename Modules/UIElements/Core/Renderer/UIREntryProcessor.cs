@@ -135,6 +135,23 @@ namespace UnityEngine.UIElements.UIR
             m_IsDrawingMask = false;
         }
 
+        // Clear important references to prevent memory retention
+        public void ClearReferences()
+        {
+            m_PreProcessor.ClearReferences();
+
+            m_RenderChain = null;
+            m_CurrentElement = null;
+            m_Mesh = null;
+
+            m_FirstCommand = null;
+            m_LastCommand = null;
+            firstHeadCommand = null;
+            lastHeadCommand = null;
+            firstTailCommand = null;
+            lastTailCommand = null;
+        }
+
         public void ProcessHead()
         {
             m_IsTail = false;
@@ -195,13 +212,13 @@ namespace UnityEngine.UIElements.UIR
                                 m_RenderType = VertexFlags.IsDynamic;
                                 m_AtlasRect = new Rect(atlasRect.x, atlasRect.y, atlasRect.width, atlasRect.height);
                                 m_RemapUVs = true;
-                                m_RenderChain.AppendTexture(m_CurrentElement, texture, textureId, true);
+                                m_RenderChain.InsertTexture(m_CurrentElement, texture, textureId, true);
                             }
                             else
                             {
                                 m_RenderType = VertexFlags.IsTextured;
                                 textureId = TextureRegistry.instance.Acquire(texture);
-                                m_RenderChain.AppendTexture(m_CurrentElement, texture, textureId, false);
+                                m_RenderChain.InsertTexture(m_CurrentElement, texture, textureId, false);
                             }
                         }
                         else
@@ -215,15 +232,15 @@ namespace UnityEngine.UIElements.UIR
                     {
                         m_RenderType = VertexFlags.IsTextured;
                         TextureId textureId = TextureRegistry.instance.Acquire(entry.texture);
-                        m_RenderChain.AppendTexture(m_CurrentElement, entry.texture, textureId, false);
+                        m_RenderChain.InsertTexture(m_CurrentElement, entry.texture, textureId, false);
                         ProcessMeshEntry(entry, textureId);
                         break;
                     }
-                    case EntryType.DrawSdfTextMesh:
+                    case EntryType.DrawTextMesh:
                     {
                         m_RenderType = VertexFlags.IsText;
                         TextureId textureId = TextureRegistry.instance.Acquire(entry.texture);
-                        m_RenderChain.AppendTexture(m_CurrentElement, entry.texture, textureId, false);
+                        m_RenderChain.InsertTexture(m_CurrentElement, entry.texture, textureId, false);
                         ProcessMeshEntry(entry, textureId);
                         break;
                     }
@@ -244,7 +261,7 @@ namespace UnityEngine.UIElements.UIR
                         {
                             // Only the settings were atlased
                             textureId = TextureRegistry.instance.Acquire(entry.gradientsOwner.atlas);
-                            m_RenderChain.AppendTexture(m_CurrentElement, entry.gradientsOwner.atlas, textureId, false);
+                            m_RenderChain.InsertTexture(m_CurrentElement, entry.gradientsOwner.atlas, textureId, false);
                         }
 
                         ProcessMeshEntry(entry, textureId);
@@ -439,7 +456,7 @@ namespace UnityEngine.UIElements.UIR
                 Color32 xformClipPages = new Color32(m_TransformData.r, m_TransformData.g, clipRectData.r, clipRectData.g);
                 Color32 addFlags = new Color32((byte)m_RenderType, 0, 0, 0);
 
-                if (entry.type == EntryType.DrawSdfTextMesh)
+                if ((entry.flags & EntryFlags.UsesTextCoreSettings) != 0)
                 {
                     // It's important to avoid writing these values when the vertices aren't for text,
                     // as some of these settings are shared with the vector graphics gradients.
@@ -469,7 +486,7 @@ namespace UnityEngine.UIElements.UIR
                     addFlags = addFlags,
                     opacityPage = opacityPage,
                     textCoreSettingsPage = m_TextCoreSettingsPage,
-                    isSdfText = entry.type == EntryType.DrawSdfTextMesh ? 1 : 0,
+                    usesTextCoreSettings = (entry.flags & EntryFlags.UsesTextCoreSettings) != 0 ? 1 : 0,
                     textureId = textureId.ConvertToGpu(),
                     gradientSettingsIndexOffset = m_GradientSettingIndexOffset,
 
@@ -500,7 +517,7 @@ namespace UnityEngine.UIElements.UIR
                 var cmd = CreateMeshDrawCommand(m_Mesh, entryIndexCount, m_IndicesFilled, entry.material, textureId);
                 AppendCommand(cmd);
 
-                if (entry.type == EntryType.DrawSdfTextMesh)
+                if (entry.type == EntryType.DrawTextMesh)
                 {
                     // Set font atlas texture gradient scale
                     cmd.state.sdfScale = entry.textScale;
@@ -613,7 +630,7 @@ namespace UnityEngine.UIElements.UIR
             UpdateOrAllocate(ref m_Mesh, allocSize.vertexCount, allocSize.indexCount, m_RenderChain.device, out m_Verts, out m_Indices, out m_IndexOffset, ref m_RenderChain.statsByRef);
             m_AllocVertexCount = (int)m_Mesh.allocVerts.size;
 
-            m_RenderChain.AppendExtraMesh(m_CurrentElement, m_Mesh);
+            m_RenderChain.InsertExtraMesh(m_CurrentElement, m_Mesh);
 
             m_VertsFilled = 0;
             m_IndicesFilled = 0;

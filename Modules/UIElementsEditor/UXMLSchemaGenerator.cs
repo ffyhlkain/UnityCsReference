@@ -55,7 +55,7 @@ namespace UnityEditor.UIElements
             "style",
         };
 
-        [MenuItem("Assets/Update UXML Schema", false, 800)]
+        [MenuItem("Assets/Update UXML Schema", false, secondaryPriority = 3)]
         static void UpdateUXMLSchema()
         {
             if (CommandService.Exists(nameof(UpdateUXMLSchema)))
@@ -365,7 +365,6 @@ namespace UnityEditor.UIElements
             var deferredFactories = new List<SerializedDataSchemaInfo>();
 
             // Convert the UxmlSerializedData into schemas info.
-            UxmlSerializedDataRegistry.Register();
             foreach (var serializedDataType in UxmlSerializedDataRegistry.SerializedDataTypes)
             {
                 var schemaInfo = new SerializedDataSchemaInfo(serializedDataType.Key, serializedDataType.Value.DeclaringType);
@@ -770,7 +769,7 @@ namespace UnityEditor.UIElements
                     // clean up default value
                     var defaultVal = description.defaultValueAsString?.Trim('\0');
                     if (defaultVal is "True" or "False")
-                        defaultVal = defaultVal.ToLower();
+                        defaultVal = defaultVal.ToLowerInvariant();
                     if (description.type != "string" && defaultVal == "")
                         defaultVal = null;
 

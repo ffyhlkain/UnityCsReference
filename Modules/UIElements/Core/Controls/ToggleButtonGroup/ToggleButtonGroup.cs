@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using Unity.Properties;
 
 namespace UnityEngine.UIElements
@@ -27,6 +28,17 @@ namespace UnityEngine.UIElements
         [UnityEngine.Internal.ExcludeFromDocs, Serializable]
         public new class UxmlSerializedData : BaseField<ToggleButtonGroupState>.UxmlSerializedData
         {
+            [Conditional("UNITY_EDITOR")]
+            public new static void Register()
+            {
+                BaseField<ToggleButtonGroupState>.UxmlSerializedData.Register();
+                UxmlDescriptionCache.RegisterType(typeof(UxmlSerializedData), new UxmlAttributeNames[]
+                {
+                    new(nameof(isMultipleSelection), "is-multiple-selection"),
+                    new(nameof(allowEmptySelection), "allow-empty-selection"),
+                });
+            }
+
             #pragma warning disable 649
             [SerializeField] bool isMultipleSelection;
             [SerializeField, UxmlIgnore, HideInInspector] UxmlAttributeFlags isMultipleSelection_UxmlAttributeFlags;
@@ -224,8 +236,9 @@ namespace UnityEngine.UIElements
             : base(label)
         {
             AddToClassList(ussClassName);
-            visualInput = new VisualElement { name = containerUssClassName, classList = { buttonGroupClassName } };
-            m_ButtonGroupContainer = visualInput;
+            visualInput = new VisualElement();
+            m_ButtonGroupContainer = new VisualElement { name = containerUssClassName, classList = { buttonGroupClassName } };
+            visualInput.Add(m_ButtonGroupContainer);
 
             // Note: We are changing the workflow through these series of callback. The desired workflow is when a user
             //       adds a new button, we would take the button and apply the necessary style and give it the designed

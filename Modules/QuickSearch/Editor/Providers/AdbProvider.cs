@@ -12,10 +12,19 @@ namespace UnityEditor.Search.Providers
     static class AdbProvider
     {
         public const string type = "adb";
+        public const string resourcesItemTag = "Resources";
+        internal const string k_DefaultResources = "library/unity default resources";
+        internal const string k_EditorResources = "library/unity editor resources";
+        internal const string k_BuiltinExtraResources = "resources/unity_builtin_extra";
+        static string[] s_ResourcePaths = new string[] {
+             k_DefaultResources,
+             k_EditorResources,
+             k_BuiltinExtraResources
+        };
 
         static ObjectQueryEngine<UnityEngine.Object> m_ResourcesQueryEngine;
 
-        public static IEnumerable<int> EnumerateInstanceIDs(in string searchQuery, in Type filterType, in SearchFlags flags)
+        public static SearchFilter CreateSearchFilter(in string searchQuery, in Type filterType, in SearchFlags flags)
         {
             var searchFilter = new SearchFilter
             {
@@ -28,6 +37,12 @@ namespace UnityEditor.Search.Providers
             if (filterType != null && searchFilter.classNames.Length == 0)
                 searchFilter.classNames = new[] { filterType.Name };
             searchFilter.filterByTypeIntersection = true;
+            return searchFilter;
+        }
+
+        public static IEnumerable<int> EnumerateInstanceIDs(in string searchQuery, in Type filterType, in SearchFlags flags)
+        {
+            var searchFilter = CreateSearchFilter(searchQuery, filterType, flags);
             return EnumerateInstanceIDs(searchFilter);
         }
 
@@ -44,8 +59,7 @@ namespace UnityEditor.Search.Providers
             var rIt = AssetDatabase.EnumerateAllAssets(searchFilter);
             while (rIt.MoveNext())
             {
-                if (rIt.Current.pptrValue)
-                    yield return rIt.Current.instanceID;
+                yield return rIt.Current.instanceID;
             }
         }
 
@@ -96,31 +110,27 @@ namespace UnityEditor.Search.Providers
             foreach (var id in EnumerateInstanceIDs(context))
             {
                 var path = AssetDatabase.GetAssetPath(id);
+                if (string.IsNullOrEmpty(path))
+                    continue;
                 var gid = GlobalObjectId.GetGlobalObjectIdSlow(id).ToString();
-                string label = null;
                 var flags = SearchDocumentFlags.Asset;
                 if (AssetDatabase.IsSubAsset(id))
                 {
                     var obj = UnityEngine.Object.FindObjectFromInstanceID(id);
                     var filename = Path.GetFileNameWithoutExtension(path);
-                    label = obj?.name ?? filename;
-                    path = Utils.RemoveInvalidCharsFromPath($"{filename}/{label}", ' ');
+                    path = Utils.RemoveInvalidCharsFromPath($"{filename}/", ' ');
                     flags |= SearchDocumentFlags.Nested;
                 }
                 // If this ever changes and we no longer use the AssetProvider to create items, please update the test SearchEngineTests.ProjectSearch_AlwaysReturnsPaths
                 var item = AssetProvider.CreateItem("ADB", context, provider, context.filterType, gid, path, 998, flags);
-                if (label != null)
-                {
-                    item.label = label;
-                }
                 yield return item;
             }
 
             // Search builtin resources
-            var resources = GetAllResourcesAtPath("library/unity default resources")
-                .Concat(GetAllResourcesAtPath("resources/unity_builtin_extra"));
+            var resources = GetAllResourcesAtPath(k_DefaultResources)
+                .Concat(GetAllResourcesAtPath(k_BuiltinExtraResources));
             if (context.wantsMore)
-                resources = resources.Concat(GetAllResourcesAtPath("library/unity editor resources"));
+                resources = resources.Concat(GetAllResourcesAtPath(k_EditorResources));
 
             if (context.filterType != null)
                 resources = resources.Where(r => context.filterType.IsAssignableFrom(r.GetType()));
@@ -138,8 +148,18 @@ namespace UnityEditor.Search.Providers
                 if (gid.identifierType == 0)
                     continue;
                 // If this ever changes and we no longer use the AssetProvider to create items, please update the test SearchEngineTests.ProjectSearch_AlwaysReturnsPaths
-                yield return AssetProvider.CreateItem("Resources", context, provider, gid.ToString(), null, 1998, SearchDocumentFlags.Resources);
+                yield return AssetProvider.CreateItem(resourcesItemTag, context, provider, gid.ToString(), null, 1998, SearchDocumentFlags.Resources);
             }
+        }
+
+        internal static bool IsResourcePath(string path)
+        {
+            foreach (var resourcePath in s_ResourcePaths)
+            {
+                if (path.Equals(resourcePath, StringComparison.CurrentCultureIgnoreCase))
+                    return true;
+            }
+            return false;
         }
 
         static IEnumerable<SearchProposition> FetchPropositions(SearchContext context, SearchPropositionOptions options)
@@ -173,8 +193,8 @@ namespace UnityEditor.Search.Providers
             };
         }
 
-        [MenuItem("Window/Search/Asset Database", priority = 1271)] static void OpenProvider() => SearchUtils.OpenWithProviders(type);
-        [ShortcutManagement.Shortcut("Help/Search/Asset Database")] static void OpenShortcut() => SearchUtils.OpenWithProviders(type);
+        [MenuItem("Window/Search/Asset Database", priority = 1271)] static void OpenProvider() => SearchUtils.OpenWithContextualProviders(type);
+        [ShortcutManagement.Shortcut("Help/Search/Asset Database")] static void OpenShortcut() => SearchUtils.OpenWithContextualProviders(type);
     }
 
     [QueryListBlock(null, "area", "a", ":")]

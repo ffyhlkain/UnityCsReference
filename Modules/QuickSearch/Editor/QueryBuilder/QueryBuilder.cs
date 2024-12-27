@@ -94,6 +94,7 @@ namespace UnityEditor.Search
         {
             m_Context = searchContext;
             m_SearchField = searchField;
+            m_SearchText = m_Context.searchText;
             Build();
         }
 
@@ -582,7 +583,7 @@ namespace UnityEditor.Search
                     m_TextBlock.GetSearchField()?.Focus();
                 }
             }
-            else if (evt.keyCode == KeyCode.Backspace || evt.keyCode == KeyCode.Delete)
+            else if (evt.keyCode == KeyCode.Delete)
             {
                 QueryBlock toRemoveBlock = currentBlock;
                 if (toRemoveBlock != null && !toRemoveBlock.@readonly)

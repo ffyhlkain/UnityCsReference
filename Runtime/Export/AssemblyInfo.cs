@@ -37,9 +37,12 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("UnityEditor.WebGL.Extensions")]
 [assembly: InternalsVisibleTo("UnityEditor.EmbeddedLinux.Extensions")]
 [assembly: InternalsVisibleTo("UnityEditor.QNX.Extensions")]
+[assembly: InternalsVisibleTo("UnityEditor.Kepler.Extensions")]
 [assembly: InternalsVisibleTo("Assembly-CSharp-Editor-testable")]
 [assembly: InternalsVisibleTo("Assembly-CSharp-Editor-firstpass-testable")]
 [assembly: InternalsVisibleTo("UnityEditor.iOS.Extensions.Common")]
+[assembly: InternalsVisibleTo("UnityEditor.Apple.Extensions.Common")]
+[assembly: InternalsVisibleTo("UnityEditor.VisionOS.Extensions")]
 [assembly: InternalsVisibleTo("UnityEditor.Android.Extensions")]
 [assembly: InternalsVisibleTo("Unity.AndroidBuildPipeline")]
 [assembly: InternalsVisibleTo("UnityEditor.OSXStandalone.Extensions")]
@@ -57,6 +60,7 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("Unity.Tiny.Rendering.Authoring")]
 [assembly: InternalsVisibleTo("Unity.Tiny.Authoring")]
 [assembly: InternalsVisibleTo("Unity.ImageConversionTests")]
+[assembly: InternalsVisibleTo("Unity.PathTracing.Editor")]
 
 // This should move with the AnimationWindow to a module at some point
 [assembly: InternalsVisibleTo("UnityEditor.Modules.Animation.tests.AnimationWindow")]
@@ -82,6 +86,7 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("Unity.IntegrationTests.Timeline")]
 [assembly: InternalsVisibleTo("Unity.IntegrationTests.Framework")]
 [assembly: InternalsVisibleTo("Unity.IntegrationTests.Framework.Tests")]
+[assembly: InternalsVisibleTo("Unity.PathTracing.Runtime")]
 [assembly: InternalsVisibleTo("Unity.RuntimeTests")]
 [assembly: InternalsVisibleTo("Unity.RuntimeTests.Framework")]
 [assembly: InternalsVisibleTo("Unity.RuntimeTests.Framework.Tests")]

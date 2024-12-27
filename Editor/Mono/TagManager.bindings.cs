@@ -97,10 +97,22 @@ namespace UnityEditor
         [FreeFunction("GetTagManager().TryAddRenderingLayerName")]
         internal static extern bool Internal_TryAddRenderingLayerName(string name);
 
+        [FreeFunction("GetTagManager().TryRemoveLastRenderingLayerName")]
+        internal static extern bool Internal_TryRemoveLastRenderingLayerName();
+
         [NativeMethod]
         internal extern int StringToRenderingLayer(string name);
 
         [NativeMethod]
         internal extern string RenderingLayerToString(int index);
+
+        internal static Action onRenderingLayersChanged;
+
+        [RequiredByNativeCode]
+        internal static void OnRenderingLayersChanged()
+        {
+            onRenderingLayersChanged?.Invoke();
+        }
+
     }
 }

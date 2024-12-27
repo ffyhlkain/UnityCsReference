@@ -15,13 +15,24 @@ namespace UnityEngine
     public partial class Awaitable
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static void ThrowIfNotMainThread()
+        {
+            if (Thread.CurrentThread.ManagedThreadId != _mainThreadId)
+            {
+                throw new InvalidOperationException("This operation can only be performed on the main thread.");
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Awaitable NextFrameAsync(CancellationToken cancellationToken = default)
         {
+            ThrowIfNotMainThread();
             cancellationToken.ThrowIfCancellationRequested();
 
             EnsureDelayedCallWiredUp();
             var awaitable = Awaitable.NewManagedAwaitable();
             _nextFrameAwaitables.Add(awaitable, Time.frameCount + 1);
+            awaitable._managedCompletionQueue = _nextFrameAwaitables;
             if (cancellationToken.CanBeCanceled)
             {
                 WireupCancellation(awaitable, cancellationToken);
@@ -32,6 +43,7 @@ namespace UnityEngine
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Awaitable WaitForSecondsAsync(float seconds, CancellationToken cancellationToken = default)
         {
+            ThrowIfNotMainThread();
             cancellationToken.ThrowIfCancellationRequested();
             var ptr = WaitForScondsInternal(seconds);
             return FromNativeAwaitableHandle(ptr, cancellationToken);
@@ -40,6 +52,7 @@ namespace UnityEngine
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Awaitable FixedUpdateAsync(CancellationToken cancellationToken = default)
         {
+            ThrowIfNotMainThread();
             cancellationToken.ThrowIfCancellationRequested();
             var ptr = FixedUpdateInternal();
             return FromNativeAwaitableHandle(ptr, cancellationToken);
@@ -48,11 +61,13 @@ namespace UnityEngine
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Awaitable EndOfFrameAsync(CancellationToken cancellationToken = default)
         {
+            ThrowIfNotMainThread();
             cancellationToken.ThrowIfCancellationRequested();
 
             EnsureDelayedCallWiredUp();
             var awaitable = Awaitable.NewManagedAwaitable();
             _endOfFrameAwaitables.Add(awaitable, -1);
+            awaitable._managedCompletionQueue = _endOfFrameAwaitables;
             if (cancellationToken.CanBeCanceled)
             {
                 WireupCancellation(awaitable, cancellationToken);
@@ -133,6 +148,10 @@ namespace UnityEngine
             public void Add(Awaitable item, int frameIndex)
             {
                 _awaitables.Add(new AwaitableAndFrameIndex(item, frameIndex));
+            }
+            public void Remove(Awaitable item)
+            {
+                _awaitables.RemoveAll(x => x.Awaitable == item);
             }
             public void Clear()
             {

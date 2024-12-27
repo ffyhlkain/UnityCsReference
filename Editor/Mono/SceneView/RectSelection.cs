@@ -25,6 +25,8 @@ namespace UnityEditor
 
         Dictionary<GameObject, bool> m_LastSelection;
 
+        readonly SceneViewPickingShortcutContext m_SceneViewPickingShortcutContext = new SceneViewPickingShortcutContext();
+
         public static event Action rectSelectionStarting = delegate { };
         public static event Action rectSelectionFinished = delegate { };
 
@@ -33,20 +35,24 @@ namespace UnityEditor
         const string k_PickingEventCommandName = "SceneViewPickingEventCommand";
         const string k_SetRectSelectionHotControlEventCommandName = "SetRectSelectionHotControlEventCommand";
 
-        const string k_RectSelectionNormal = "Scene View/Rect Selection Normal";
-        const string k_RectSelectionAdditive = "Scene View/Rect Selection Additive";
-        const string k_RectSelectionSubtractive = "Scene View/Rect Selection Subtractive";
-        const string k_PickingNormal = "Scene View/Picking Normal";
-        const string k_PickingAdditive = "Scene View/Picking Additive";
-        const string k_PickingSubtractive = "Scene View/Picking Subtractive";
+        const string k_RectSelectionNormal = "Scene View/Box Select";
+        const string k_RectSelectionAdditive = "Scene View/Add Box Select";
+        const string k_RectSelectionSubtractive = "Scene View/Invert Box Select";
+        const string k_PickingNormal = "Scene View/Select";
+        const string k_PickingAdditive = "Scene View/Add Select";
+        const string k_PickingSubtractive = "Scene View/Invert Select";
 
         readonly int k_RectSelectionID = GUIUtility.GetPermanentControlID();
 
-        [InitializeOnLoadMethod]
-        static void RegisterShortcutContext() => EditorApplication.delayCall += () =>
+        public void RegisterShortcutContext()
         {
-            ShortcutIntegration.instance.contextManager.RegisterToolContext(new SceneViewPickingShortcutContext());
-        };
+            ShortcutIntegration.instance.contextManager.RegisterToolContext(m_SceneViewPickingShortcutContext);
+        }
+
+        public void UnregisterShortcutContext()
+        {
+            ShortcutIntegration.instance.contextManager.DeregisterToolContext(m_SceneViewPickingShortcutContext);
+        }
 
         [ClutchShortcut(k_RectSelectionNormal, typeof(SceneViewPickingShortcutContext), KeyCode.Mouse0)]
         static void OnNormalRectSelection(ShortcutArguments args)

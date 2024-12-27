@@ -135,6 +135,8 @@ namespace UnityEngine.UIElements
         // The usual height used for a control, such as a one-line text field. See --unity-metrics-single_line-height and EditorGUIUtility.singleLineHeight.
         internal static float singleLineHeight = 18;
 
+        public const string hiddenClassName = "unity-hidden";
+
         internal static bool s_EnableOSXContextualMenuEventsOnNonOSXPlatforms;
         public static bool isOSXContextualMenuPlatform
         {
@@ -530,23 +532,6 @@ namespace UnityEngine.UIElements
         internal static Dictionary<int, Panel>.Enumerator GetPanelsIterator()
         {
             return s_UIElementsCache.GetEnumerator();
-        }
-
-        // Used by tests
-        internal static Panel FindOrCreateEditorPanel(ScriptableObject ownerObject)
-        {
-            Panel panel;
-            if (!s_UIElementsCache.TryGetValue(ownerObject.GetInstanceID(), out panel))
-            {
-                panel = Panel.CreateEditorPanel(ownerObject);
-                RegisterCachedPanel(ownerObject.GetInstanceID(), panel);
-            }
-            else
-            {
-                Debug.Assert(ContextType.Editor == panel.contextType, "Panel is not an editor panel.");
-            }
-
-            return panel;
         }
 
         internal static float PixelsPerUnitScaleForElement(VisualElement ve, Sprite sprite)

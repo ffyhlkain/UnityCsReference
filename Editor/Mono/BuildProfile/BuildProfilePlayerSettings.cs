@@ -12,7 +12,7 @@ namespace UnityEditor.Build.Profile
     public partial class BuildProfile
     {
         [Serializable]
-        class PlayerSettingsYaml
+        internal class PlayerSettingsYaml
         {
             [Serializable]
             class YamlSetting
@@ -42,8 +42,33 @@ namespace UnityEditor.Build.Profile
                 // Splitting the YAML single string into individual lines to better readability
                 // in the asset file
                 var settings = yamlStr.Split("\n");
+                string prevLine = "";
                 foreach (var setting in settings)
                 {
+                    // When the } is on the second line, we should join the two lines.
+                    // Otherwise, we will break the serialization for the object by adding
+                    // the '-line' in front of the second line that when deserialized, it does not
+                    // know how to parse it.
+                    if (setting.Contains("{") && !setting.Contains("}"))
+                    {
+                        prevLine = setting;
+                        continue;
+                    }
+
+                    if (!string.IsNullOrEmpty(prevLine))
+                    {
+                        if (setting.Contains("}"))
+                        {
+                            m_Settings.Add(new YamlSetting(prevLine + setting));
+                        }
+                        else
+                        {
+                            Debug.LogWarning("a { has no closing } on the second line. Invalid Serialization.");
+                        }
+                        prevLine = "";
+                        continue;
+                    }
+
                     var newSetting = new YamlSetting(setting);
                     m_Settings.Add(newSetting);
                 }
@@ -82,6 +107,15 @@ namespace UnityEditor.Build.Profile
             DeserializePlayerSettings();
         }
 
+        internal void UpdatePlayerSettingsObjectFromYAML()
+        {
+            if (!HasSerializedPlayerSettings())
+                return;
+
+            PlayerSettings.UpdatePlayerSettingsObjectFromYAML(playerSettings, m_PlayerSettingsYaml.GetYamlString());
+            OnPlayerSettingsUpdatedFromYAML?.Invoke();
+        }
+
         internal void CreatePlayerSettingsFromGlobal()
         {
             if (m_PlayerSettings != null || BuildProfileContext.IsClassicPlatformProfile(this))
@@ -102,6 +136,8 @@ namespace UnityEditor.Build.Profile
             if (BuildProfileContext.IsClassicPlatformProfile(this))
                 return;
 
+            UpdateGlobalManagerPlayerSettings(activeWillBeRemoved: true);
+
             if (m_PlayerSettings != null)
             {
                 DestroyImmediate(m_PlayerSettings, true);
@@ -112,7 +148,7 @@ namespace UnityEditor.Build.Profile
                     m_PlayerSettingsYaml.Clear();
             }
 
-            UpdateGlobalManagerPlayerSettings(activeWillBeRemoved: true);
+            OnPlayerSettingsUpdatedFromYAML?.Invoke();
         }
 
         internal static void CleanUpPlayerSettingsForDeletedBuildProfiles(IList<BuildProfile> currentBuildProfiles)
@@ -160,7 +196,10 @@ namespace UnityEditor.Build.Profile
             if (!HasSerializedPlayerSettings())
                 return;
 
-            m_PlayerSettings = PlayerSettings.DeserializeFromYAMLString(m_PlayerSettingsYaml.GetYamlString());
+            if (m_PlayerSettings == null)
+                m_PlayerSettings = PlayerSettings.DeserializeFromYAMLString(m_PlayerSettingsYaml.GetYamlString());
+            else
+                UpdatePlayerSettingsObjectFromYAML();
             s_LoadedPlayerSettings.Add(m_PlayerSettings);
             UpdateGlobalManagerPlayerSettings();
         }
@@ -172,7 +211,7 @@ namespace UnityEditor.Build.Profile
 
         internal void UpdateGlobalManagerPlayerSettings(bool activeWillBeRemoved = false)
         {
-            if (BuildProfileContext.instance.activeProfile != this)
+            if (BuildProfileContext.activeProfile != this)
                 return;
 
             var playerSettings = (HasSerializedPlayerSettings() && !activeWillBeRemoved) ? m_PlayerSettings : s_GlobalPlayerSettings;
@@ -181,7 +220,7 @@ namespace UnityEditor.Build.Profile
 
         internal static void TrySetProjectSettingsAssetAsGlobalManagerPlayerSettings()
         {
-            if (BuildProfileContext.instance.activeProfile != null)
+            if (BuildProfileContext.activeProfile != null)
                 return;
 
             TryLoadProjectSettingsAssetPlayerSettings();
@@ -200,6 +239,11 @@ namespace UnityEditor.Build.Profile
         {
             if (s_GlobalPlayerSettings == null)
                 s_GlobalPlayerSettings = AssetDatabase.LoadAssetAtPath<PlayerSettings>(k_ProjectSettingsAssetPath);
+        }
+
+        internal static PlayerSettings GetGlobalPlayerSettings()
+        {
+            return s_GlobalPlayerSettings;
         }
     }
 }

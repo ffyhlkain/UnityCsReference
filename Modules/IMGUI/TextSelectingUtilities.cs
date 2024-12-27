@@ -19,7 +19,8 @@ namespace UnityEngine
 
         private bool m_bJustSelected = false;
         private bool m_MouseDragSelectsWholeWords = false;
-        private int m_DblClickInitPos = 0;
+        private int m_DblClickInitPosStart = 0;
+        private int m_DblClickInitPosEnd = 0;
         public TextHandle textHandle;
         private const int kMoveDownHeight = 5;
         private const char kNewLineChar = '\n';
@@ -41,8 +42,9 @@ namespace UnityEngine
             }
         }
 
-        int m_CharacterCount => textHandle.textInfo.characterCount;
-        int characterCount => (m_CharacterCount > 0 && textHandle.textInfo.textElementInfo[m_CharacterCount - 1].character == 0x200B) ? m_CharacterCount - 1 : m_CharacterCount;
+        int m_CharacterCount => textHandle.characterCount;
+        // For TextCore we need to substract 1 if the last character is a zero width space
+        int characterCount => (!textHandle.useAdvancedText && m_CharacterCount > 0 && textHandle.textInfo.textElementInfo[m_CharacterCount - 1].character == 0x200B) ? m_CharacterCount - 1 : m_CharacterCount;
         TextElementInfo[] m_TextElementInfos => textHandle.textInfo.textElementInfo;
 
         int m_CursorIndex = 0;
@@ -385,6 +387,15 @@ namespace UnityEngine
         {
             ClearCursorPos();
             bool wasBehind = cursorIndex < selectIndex;
+
+            if (textHandle.useAdvancedText)
+            {
+                int cursorTempIndex = cursorIndex;
+                textHandle.SelectToNextParagraph(ref cursorTempIndex);
+                cursorIndex = cursorTempIndex;
+                return;
+            }
+
             if (cursorIndex < characterCount)
             {
                 cursorIndex = IndexOfEndOfLine(cursorIndex + 1);
@@ -397,9 +408,19 @@ namespace UnityEngine
         {
             ClearCursorPos();
             bool wasInFront = cursorIndex > selectIndex;
+
+            if (textHandle.useAdvancedText)
+            {
+                int cursorTempIndex = cursorIndex;
+                textHandle.SelectToPreviousParagraph(ref cursorTempIndex);
+                cursorIndex = cursorTempIndex;
+                return;
+            }
+
             if (cursorIndex > 1)
             {
                 cursorIndex = textHandle.LastIndexOf(kNewLineChar, cursorIndex - 2) + 1;
+
                 if (wasInFront && cursorIndex < selectIndex)
                     cursorIndex = selectIndex;
             }
@@ -411,15 +432,35 @@ namespace UnityEngine
         public void SelectCurrentWord()
         {
             var index = cursorIndex;
-            if (cursorIndex < selectIndex)
+            
+            if (textHandle.useAdvancedText)
             {
-                cursorIndex = FindEndOfClassification(index, Direction.Backward);
-                selectIndex = FindEndOfClassification(index, Direction.Forward);
+                int cursor = 0;
+                int select = 0;
+                textHandle.SelectCurrentWord(index, ref cursor, ref select);
+                if (cursorIndex < selectIndex)
+                {
+                    cursorIndex = cursor;
+                    selectIndex = select;
+                }
+                else
+                {
+                    cursorIndex = select;
+                    selectIndex = cursor;
+                }
             }
             else
             {
-                cursorIndex = FindEndOfClassification(index, Direction.Forward);
-                selectIndex = FindEndOfClassification(index, Direction.Backward);
+                if (cursorIndex < selectIndex)
+                {
+                    cursorIndex = FindEndOfClassification(index, Direction.Backward);
+                    selectIndex = FindEndOfClassification(index, Direction.Forward);
+                }
+                else
+                {
+                    cursorIndex = FindEndOfClassification(index, Direction.Forward);
+                    selectIndex = FindEndOfClassification(index, Direction.Backward);
+                }
             }
 
             ClearCursorPos();
@@ -431,6 +472,16 @@ namespace UnityEngine
         {
             ClearCursorPos();
             int textLen = characterCount;
+
+            if (textHandle.useAdvancedText)
+            {
+                int cursorTempIndex = cursorIndex;
+                int selectTempIndex = selectIndex;
+                textHandle.SelectCurrentParagraph(ref cursorTempIndex, ref selectTempIndex);
+                cursorIndex = cursorTempIndex;
+                selectIndex = selectTempIndex;
+                return;
+            }
 
             if (cursorIndex < textLen)
                 cursorIndex = IndexOfEndOfLine(cursorIndex);
@@ -561,6 +612,14 @@ namespace UnityEngine
         /// Move to the next paragraph
         public void MoveParagraphForward()
         {
+            if (textHandle.useAdvancedText)
+            {
+                int cursorTempIndex = cursorIndex;
+                textHandle.SelectToNextParagraph(ref cursorTempIndex);
+                cursorIndex = selectIndex = cursorTempIndex;
+                return;
+            }
+
             cursorIndex = cursorIndex > selectIndex ? cursorIndex : selectIndex;
             if (cursorIndex < characterCount)
             {
@@ -571,6 +630,14 @@ namespace UnityEngine
         /// Move to the previous paragraph
         public void MoveParagraphBackward()
         {
+            if (textHandle.useAdvancedText)
+            {
+                int cursorTempIndex = cursorIndex;
+                textHandle.SelectToPreviousParagraph(ref cursorTempIndex);
+                cursorIndex = selectIndex = cursorTempIndex;
+                return;
+            }
+
             cursorIndex = cursorIndex < selectIndex ? cursorIndex : selectIndex;
             if (cursorIndex > 1)
             {
@@ -587,7 +654,11 @@ namespace UnityEngine
         public void MoveWordRight()
         {
             cursorIndex = cursorIndex > selectIndex ? cursorIndex : selectIndex;
-            cursorIndex = selectIndex = FindNextSeperator(cursorIndex);
+
+            if (textHandle.useAdvancedText)
+                cursorIndex = selectIndex = FindStartOfNextWord(cursorIndex);
+            else
+                cursorIndex = selectIndex = FindNextSeperator(cursorIndex);
             ClearCursorPos();
         }
 
@@ -616,7 +687,11 @@ namespace UnityEngine
         public void MoveWordLeft()
         {
             cursorIndex = cursorIndex < selectIndex ? cursorIndex : selectIndex;
-            cursorIndex = FindPrevSeperator(cursorIndex);
+            if (textHandle.useAdvancedText)
+                cursorIndex = FindEndOfPreviousWord(cursorIndex);
+            else
+                cursorIndex = FindPrevSeperator(cursorIndex);
+
             selectIndex = cursorIndex;
         }
 
@@ -624,7 +699,8 @@ namespace UnityEngine
         public void MouseDragSelectsWholeWords(bool on)
         {
             m_MouseDragSelectsWholeWords = on;
-            m_DblClickInitPos = cursorIndex;
+            m_DblClickInitPosStart = cursorIndex < selectIndex ? cursorIndex : selectIndex;
+            m_DblClickInitPosEnd = cursorIndex < selectIndex ? selectIndex : cursorIndex;
         }
 
         /// Expand the selection to the start of the line
@@ -687,6 +763,8 @@ namespace UnityEngine
         // Do a drag selection. Used to expand the selection in MouseDrag events.
         public void SelectToPosition(Vector2 cursorPosition)
         {
+            if (characterCount == 0)
+                return;
             if (!m_MouseDragSelectsWholeWords)
                 cursorIndex = textHandle.GetCursorIndexFromPosition(cursorPosition);
             else // snap to words/paragraphs
@@ -695,30 +773,67 @@ namespace UnityEngine
 
                 if (dblClickSnap == DblClickSnapping.WORDS)
                 {
-                    if (p < m_DblClickInitPos)
+                    if (p <= m_DblClickInitPosStart)
                     {
-                        cursorIndex = FindEndOfClassification(p, Direction.Backward);
-                        selectIndex = FindEndOfClassification(m_DblClickInitPos, Direction.Forward);
+                        if (textHandle.useAdvancedText)
+                        {
+                            selectIndex = Mathf.Max(selectIndex, cursorIndex);
+                            cursorIndex = textHandle.GetEndOfPreviousWord(p);
+                        }
+                        else
+                        {
+                            cursorIndex = FindEndOfClassification(p, Direction.Backward);
+                            selectIndex = FindEndOfClassification(m_DblClickInitPosEnd - 1, Direction.Forward);
+                        }
+                    }
+                    else if (p >= m_DblClickInitPosEnd)
+                    {
+                        if (textHandle.useAdvancedText)
+                        {
+                            selectIndex = Mathf.Min(selectIndex, cursorIndex);
+                            cursorIndex = textHandle.GetStartOfNextWord(p - 1);
+                        }
+                        else
+                        {
+                            cursorIndex = FindEndOfClassification(p - 1, Direction.Forward);
+                            selectIndex = FindEndOfClassification(m_DblClickInitPosStart + 1, Direction.Backward);
+                        }
                     }
                     else
                     {
-                        cursorIndex = FindEndOfClassification(p, Direction.Forward);
-                        selectIndex = FindEndOfClassification(m_DblClickInitPos, Direction.Backward);
+                        cursorIndex = m_DblClickInitPosStart;
+                        selectIndex = m_DblClickInitPosEnd;
                     }
                 } // paragraph
                 else
                 {
-                    if (p < m_DblClickInitPos)
+                    if ((!textHandle.useAdvancedText && p <= m_DblClickInitPosStart) || (textHandle.useAdvancedText && p < m_DblClickInitPosStart))
                     {
+                        if (textHandle.useAdvancedText)
+                        {
+                            int selectTempIndex = p;
+                            textHandle.SelectToStartOfParagraph(ref selectTempIndex);
+                            selectIndex = selectTempIndex;
+                            return;
+                        }
+
                         if (p > 0)
-                            cursorIndex = textHandle.LastIndexOf(kNewLineChar, Mathf.Max(0, p - 2)) + 1;
+                            cursorIndex = textHandle.LastIndexOf(kNewLineChar, Mathf.Max(0, p - 1)) + 1;
                         else
                             cursorIndex = 0;
 
-                        selectIndex = textHandle.LastIndexOf(kNewLineChar, Mathf.Min(characterCount - 1, m_DblClickInitPos));
+                        selectIndex = textHandle.LastIndexOf(kNewLineChar, Mathf.Min(characterCount - 1, m_DblClickInitPosEnd + 1));
                     }
-                    else
+                    else if (p >= m_DblClickInitPosEnd)
                     {
+                        if (textHandle.useAdvancedText)
+                        {
+                            int cursorTempIndex = p;
+                            textHandle.SelectToEndOfParagraph(ref cursorTempIndex);
+                            cursorIndex = cursorTempIndex;
+                            return;
+                        }
+
                         if (p < characterCount)
                         {
                             cursorIndex = IndexOfEndOfLine(p);
@@ -726,7 +841,20 @@ namespace UnityEngine
                         else
                             cursorIndex = characterCount;
 
-                        selectIndex = textHandle.LastIndexOf(kNewLineChar, Mathf.Max(0, m_DblClickInitPos - 2)) + 1;
+                        selectIndex = textHandle.LastIndexOf(kNewLineChar, Mathf.Max(0, m_DblClickInitPosEnd - 2)) + 1;
+                    }
+                    else
+                    {
+                        if (textHandle.useAdvancedText)
+                        {
+                            cursorIndex = m_DblClickInitPosEnd;
+                            selectIndex = m_DblClickInitPosStart;
+                        }
+                        else
+                        {
+                            cursorIndex = m_DblClickInitPosStart;
+                            selectIndex = m_DblClickInitPosEnd;
+                        }
                     }
                 }
             }
@@ -761,6 +889,10 @@ namespace UnityEngine
 
         public int FindStartOfNextWord(int p)
         {
+            if (textHandle.useAdvancedText)
+            {
+                return textHandle.GetStartOfNextWord(p);
+            }
             int textLen = characterCount;
             if (p == textLen)
                 return p;
@@ -797,6 +929,10 @@ namespace UnityEngine
 
         public int FindEndOfPreviousWord(int p)
         {
+            if (textHandle.useAdvancedText)
+            {
+                return textHandle.GetEndOfPreviousWord(p);
+            }
             if (p == 0)
                 return p;
             p = PreviousCodePointIndex(p);
@@ -868,6 +1004,9 @@ namespace UnityEngine
 
         public int PreviousCodePointIndex(int index)
         {
+            if (textHandle.useAdvancedText)
+                return textHandle.PreviousCodePointIndex(index);
+
             if (index > 0)
                 index--;
 
@@ -876,6 +1015,11 @@ namespace UnityEngine
 
         public int NextCodePointIndex(int index)
         {
+            if (textHandle.useAdvancedText)
+            {
+                return textHandle.NextCodePointIndex(index);
+            }
+
             if (index < characterCount)
                 index++;
 
@@ -884,6 +1028,10 @@ namespace UnityEngine
 
         int GetGraphicalLineStart(int p)
         {
+            if (textHandle.useAdvancedText)
+            {
+               return textHandle.GetFirstCharacterIndexOnLine(p);
+            }
             Vector2 point = textHandle.GetCursorPositionFromStringIndexUsingLineHeight(p);
             point.y -= 1.0f / GUIUtility.pixelsPerPoint; // we make sure no floating point errors can make us land on another line
             point.x = 0;
@@ -892,6 +1040,10 @@ namespace UnityEngine
 
         int GetGraphicalLineEnd(int p)
         {
+            if (textHandle.useAdvancedText)
+            {
+                return textHandle.GetLastCharacterIndexOnLine(p);
+            }
             Vector2 point = textHandle.GetCursorPositionFromStringIndexUsingLineHeight(p);
             point.y -= 1.0f / GUIUtility.pixelsPerPoint; // we make sure no floating point errors can make us land on another line
             point.x += 5000;

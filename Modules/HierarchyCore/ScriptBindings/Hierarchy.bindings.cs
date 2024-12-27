@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Unity.Collections.LowLevel.Unsafe;
 using UnityEngine.Bindings;
@@ -14,7 +15,7 @@ namespace Unity.Hierarchy
     /// <summary>
     /// Represents a tree-like container of nodes.
     /// </summary>
-    [NativeType(Header = "Modules/HierarchyCore/Public/Hierarchy.h")]
+    [NativeHeader("Modules/HierarchyCore/Public/Hierarchy.h")]
     [NativeHeader("Modules/HierarchyCore/HierarchyBindings.h")]
     [NativeHeader("Modules/HierarchyCore/Public/HierarchyNodeTypeHandlerBase.h")]
     [RequiredByNativeCode(GenerateProxy = true), StructLayout(LayoutKind.Sequential)]
@@ -25,19 +26,10 @@ namespace Unity.Hierarchy
             public static IntPtr ConvertToNative(Hierarchy hierarchy) => hierarchy.m_Ptr;
         }
 
-        [RequiredByNativeCode] IntPtr m_Ptr;
-        [RequiredByNativeCode] readonly bool m_IsWrapper;
-        [RequiredByNativeCode] readonly IntPtr m_VersionPtr;
-        [RequiredByNativeCode] readonly IntPtr m_RootPtr;
-
-        [FreeFunction("HierarchyBindings::Create", IsThreadSafe = true)]
-        static extern IntPtr Internal_Create();
-
-        [FreeFunction("HierarchyBindings::Destroy", IsThreadSafe = true)]
-        static extern void Internal_Destroy(IntPtr ptr);
-
-        [FreeFunction("HierarchyBindings::BindScriptingObject", HasExplicitThis = true, IsThreadSafe = true)]
-        extern void Internal_BindScriptingObject([Unmarshalled] Hierarchy self);
+        IntPtr m_Ptr;
+        readonly IntPtr m_RootPtr;
+        readonly IntPtr m_VersionPtr;
+        readonly bool m_IsOwner;
 
         /// <summary>
         /// Whether or not this object is valid and uses memory.
@@ -50,7 +42,17 @@ namespace Unity.Hierarchy
         /// <remarks>
         /// The root node does not need to be created, and it cannot be modified.
         /// </remarks>
-        public ref readonly HierarchyNode Root { get { unsafe { return ref UnsafeUtility.AsRef<HierarchyNode>(m_RootPtr.ToPointer()); } } }
+        public ref readonly HierarchyNode Root
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                unsafe
+                {
+                    return ref *(HierarchyNode*)m_RootPtr;
+                }
+            }
+        }
 
         /// <summary>
         /// The total number of nodes.
@@ -76,15 +78,44 @@ namespace Unity.Hierarchy
         /// </remarks>
         public extern bool UpdateNeeded { [NativeMethod("UpdateNeeded", IsThreadSafe = true)] get; }
 
-        internal unsafe int Version => UnsafeUtility.AsRef<int>(m_VersionPtr.ToPointer());
+        /// <summary>
+        /// The version of the hierarchy.
+        /// </summary>
+        internal int Version
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                unsafe
+                {
+                    return *(int*)m_VersionPtr;
+                }
+            }
+        }
 
         /// <summary>
         /// Constructs a new <see cref="Hierarchy"/>.
         /// </summary>
         public Hierarchy()
         {
-            m_Ptr = Internal_Create();
-            Internal_BindScriptingObject(this);
+            m_Ptr = Create(GCHandle.ToIntPtr(GCHandle.Alloc(this)), out var rootPtr, out var versionPtr);
+            m_RootPtr = rootPtr;
+            m_VersionPtr = versionPtr;
+            m_IsOwner = true;
+        }
+
+        /// <summary>
+        /// Constructs a new <see cref="Hierarchy"/> from a native pointer.
+        /// </summary>
+        /// <param name="nativePtr">The native pointer.</param>
+        /// <param name="rootPtr">The root node pointer.</param>
+        /// <param name="versionPtr">The version pointer.</param>
+        Hierarchy(IntPtr nativePtr, IntPtr rootPtr, IntPtr versionPtr)
+        {
+            m_Ptr = nativePtr;
+            m_RootPtr = rootPtr;
+            m_VersionPtr = versionPtr;
+            m_IsOwner = false;
         }
 
         ~Hierarchy()
@@ -105,8 +136,9 @@ namespace Unity.Hierarchy
         {
             if (m_Ptr != IntPtr.Zero)
             {
-                if (!m_IsWrapper)
-                    Internal_Destroy(m_Ptr);
+                if (m_IsOwner)
+                    Destroy(m_Ptr);
+
                 m_Ptr = IntPtr.Zero;
             }
         }
@@ -118,33 +150,32 @@ namespace Unity.Hierarchy
         /// If a hierarchy node type handler with that type is already created, the same instance is returned.
         /// </remarks>
         /// <returns>The hierarchy node type handler instance for that type.</returns>
-        public T GetOrCreateNodeTypeHandler<T>() where T : HierarchyNodeTypeHandlerBase => (T)GetOrCreateNodeTypeHandler(typeof(T));
+        public T GetOrCreateNodeTypeHandler<T>() where T : HierarchyNodeTypeHandlerBase => (T)HierarchyNodeTypeHandlerBase.FromIntPtr(GetOrCreateNodeTypeHandler(typeof(T)));
 
         /// <summary>
         /// Gets a hierarchy node type handler instance from this hierarchy.
         /// </summary>
         /// <returns>The hierarchy node type handler instance for that type if already created, <see langword="null"/> otherwise.</returns>
-        public T GetNodeTypeHandlerBase<T>() where T : HierarchyNodeTypeHandlerBase => (T)GetNodeTypeHandlerFromType(typeof(T));
+        public T GetNodeTypeHandlerBase<T>() where T : HierarchyNodeTypeHandlerBase => (T)HierarchyNodeTypeHandlerBase.FromIntPtr(GetNodeTypeHandlerFromType(typeof(T)));
 
         /// <summary>
         /// Gets the node type handler instance for the specified node from this hierarchy.
         /// </summary>
         /// <returns>If the node has a type, the hierarchy node type handler base instance, <see langword="null"/> otherwise.</returns>
-        public HierarchyNodeTypeHandlerBase GetNodeTypeHandlerBase(in HierarchyNode node) => GetNodeTypeHandlerFromNode(in node);
+        public HierarchyNodeTypeHandlerBase GetNodeTypeHandlerBase(in HierarchyNode node) => HierarchyNodeTypeHandlerBase.FromIntPtr(GetNodeTypeHandlerFromNode(in node));
 
         /// <summary>
         /// Gets the node type handler instance for the specified node type name from this hierarchy.
         /// </summary>
         /// <param name="nodeTypeName">The node type name.</param>
         /// <returns>If the node type name matches a registered node type handler, the hierarchy node type handler base instance, <see langword="null"/> otherwise.</returns>
-        public HierarchyNodeTypeHandlerBase GetNodeTypeHandlerBase(string nodeTypeName) => GetNodeTypeHandlerFromName(nodeTypeName);
+        public HierarchyNodeTypeHandlerBase GetNodeTypeHandlerBase(string nodeTypeName) => HierarchyNodeTypeHandlerBase.FromIntPtr(GetNodeTypeHandlerFromName(nodeTypeName));
 
         /// <summary>
-        /// Gets all the node type handlers that this hierarchy uses.
+        /// Enumerates all the node type handlers base that this hierarchy uses.
         /// </summary>
-        /// <param name="handlers">The list of node type handlers to populate.</param>
-        [FreeFunction("HierarchyBindings::GetAllNodeTypeHandlersBase", HasExplicitThis = true, IsThreadSafe = true)]
-        public extern void GetAllNodeTypeHandlersBase(List<HierarchyNodeTypeHandlerBase> handlers);
+        /// <returns>An enumerable of hierarchy node type handler base.</returns>
+        public HierarchyNodeTypeHandlerBaseEnumerable EnumerateNodeTypeHandlersBase() => new HierarchyNodeTypeHandlerBaseEnumerable(this);
 
         /// <summary>
         /// Gets the type of the specified hierarchy node.  
@@ -272,7 +303,7 @@ namespace Unity.Hierarchy
         /// </summary>
         /// <param name="node">The hierarchy node.</param>
         /// <param name="index">The child index.</param>
-        /// <returns>An hierarchy node.</returns>
+        /// <returns>A hierarchy node.</returns>
         [NativeMethod(IsThreadSafe = true, ThrowsException = true)]
         public extern HierarchyNode GetChild(in HierarchyNode node, int index);
 
@@ -416,6 +447,14 @@ namespace Unity.Hierarchy
         public extern string GetName(in HierarchyNode node);
 
         /// <summary>
+        /// Gets the path of a hierarchy node.
+        /// </summary>
+        /// <param name="node">The hierarchy node.</param>
+        /// <returns>The path of the node.</returns>
+        [NativeMethod(IsThreadSafe = true, ThrowsException = true)]
+        public extern string GetPath(in HierarchyNode node);
+
+        /// <summary>
         /// Updates the hierarchy and requests that every registered hierarchy node type handler integrates their changes into the hierarchy.
         /// </summary>
         [NativeMethod(IsThreadSafe = true)]
@@ -436,23 +475,36 @@ namespace Unity.Hierarchy
         [NativeMethod(IsThreadSafe = true)]
         public extern bool UpdateIncrementalTimed(double milliseconds);
 
-        [return: Unmarshalled]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static Hierarchy FromIntPtr(IntPtr handlePtr) => handlePtr != IntPtr.Zero ? (Hierarchy)GCHandle.FromIntPtr(handlePtr).Target : null;
+
+        [FreeFunction("HierarchyBindings::Create", IsThreadSafe = true)]
+        static extern IntPtr Create(IntPtr handlePtr, out IntPtr rootPtr, out IntPtr versionPtr);
+
+        [FreeFunction("HierarchyBindings::Destroy", IsThreadSafe = true)]
+        static extern void Destroy(IntPtr nativePtr);
+
         [FreeFunction("HierarchyBindings::GetOrCreateNodeTypeHandler", HasExplicitThis = true, IsThreadSafe = true, ThrowsException = true)]
-        extern HierarchyNodeTypeHandlerBase GetOrCreateNodeTypeHandler(Type type);
+        extern IntPtr GetOrCreateNodeTypeHandler(Type type);
 
-        [return: Unmarshalled]
-        [FreeFunction("HierarchyBindings::GetNodeTypeHandlerFromType", HasExplicitThis = true, IsThreadSafe = true)]
-        extern HierarchyNodeTypeHandlerBase GetNodeTypeHandlerFromType(Type type);
+        [FreeFunction("HierarchyBindings::GetNodeTypeHandlerFromType", HasExplicitThis = true, IsThreadSafe = true, ThrowsException = true)]
+        extern IntPtr GetNodeTypeHandlerFromType(Type type);
 
-        [return: Unmarshalled]
         [FreeFunction("HierarchyBindings::GetNodeTypeHandlerFromNode", HasExplicitThis = true, IsThreadSafe = true, ThrowsException = true)]
-        extern HierarchyNodeTypeHandlerBase GetNodeTypeHandlerFromNode(in HierarchyNode node);
+        extern IntPtr GetNodeTypeHandlerFromNode(in HierarchyNode node);
 
-        [return: Unmarshalled]
         [FreeFunction("HierarchyBindings::GetNodeTypeHandlerFromName", HasExplicitThis = true, IsThreadSafe = true, ThrowsException = true)]
-        extern HierarchyNodeTypeHandlerBase GetNodeTypeHandlerFromName(string nodeTypeName);
+        extern IntPtr GetNodeTypeHandlerFromName(string nodeTypeName);
 
-        [FreeFunction("HierarchyBindings::GetNodeTypeFromType", HasExplicitThis = true, IsThreadSafe = true)]
+        [VisibleToOtherModules("UnityEngine.HierarchyModule")]
+        [FreeFunction("HierarchyBindings::GetNodeTypeHandlersBaseCount", HasExplicitThis = true, IsThreadSafe = true)]
+        internal extern int GetNodeTypeHandlersBaseCount();
+
+        [VisibleToOtherModules("UnityEngine.HierarchyModule")]
+        [FreeFunction("HierarchyBindings::GetNodeTypeHandlersBaseSpan", HasExplicitThis = true, IsThreadSafe = true, ThrowsException = true)]
+        internal extern int GetNodeTypeHandlersBaseSpan(Span<IntPtr> outHandlers);
+
+        [FreeFunction("HierarchyBindings::GetNodeTypeFromType", HasExplicitThis = true, IsThreadSafe = true, ThrowsException = true)]
         extern HierarchyNodeType GetNodeTypeFromType(Type type);
 
         [FreeFunction("HierarchyBindings::AddNode", HasExplicitThis = true, IsThreadSafe = true, ThrowsException = true)]
@@ -485,6 +537,11 @@ namespace Unity.Hierarchy
         [FreeFunction("HierarchyBindings::ClearProperty", HasExplicitThis = true, IsThreadSafe = true, ThrowsException = true)]
         internal extern void ClearProperty(in HierarchyPropertyId property, in HierarchyNode node);
 
+        #region Called from native
+        [RequiredByNativeCode]
+        static IntPtr CreateHierarchy(IntPtr nativePtr, IntPtr rootPtr, IntPtr versionPtr) => GCHandle.ToIntPtr(GCHandle.Alloc(new Hierarchy(nativePtr, rootPtr, versionPtr)));
+        #endregion
+
         #region Obsolete public APIs to remove in 2024
         /// <summary>
         /// Registers a hierarchy node type handler for this hierarchy.
@@ -494,13 +551,32 @@ namespace Unity.Hierarchy
         /// </remarks>
         /// <returns>The hierarchy node type handler instance for that type.</returns>
         [Obsolete("RegisterNodeTypeHandler has been renamed GetOrCreateNodeTypeHandler (UnityUpgradable) -> GetOrCreateNodeTypeHandler<T>()")]
-        public T RegisterNodeTypeHandler<T>() where T : HierarchyNodeTypeHandlerBase => (T)GetOrCreateNodeTypeHandler(typeof(T));
+        public T RegisterNodeTypeHandler<T>() where T : HierarchyNodeTypeHandlerBase => (T)HierarchyNodeTypeHandlerBase.FromIntPtr(GetOrCreateNodeTypeHandler(typeof(T)));
 
         /// <summary>
         /// Removes a hierarchy node type handler from this hierarchy.
         /// </summary>
         [Obsolete("UnregisterNodeTypeHandler no longer has any effect and will be removed in a future release.")]
         public void UnregisterNodeTypeHandler<T>() where T : HierarchyNodeTypeHandlerBase { }
+
+        /// <summary>
+        /// Gets the number of node type handlers that this hierarchy uses.
+        /// </summary>
+        /// <returns>Number of node type handlers.</returns>
+        [Obsolete("GetAllNodeTypeHandlersBaseCount is obsolete, please use EnumerateNodeTypeHandlersBase instead.")]
+        public int GetAllNodeTypeHandlersBaseCount() => GetNodeTypeHandlersBaseCount();
+
+        /// <summary>
+        /// Gets all the node type handlers that this hierarchy uses.
+        /// </summary>
+        /// <param name="handlers">The list of node type handlers to populate.</param>
+        [Obsolete("GetAllNodeTypeHandlersBase is obsolete, please use EnumerateNodeTypeHandlersBase instead.")]
+        public void GetAllNodeTypeHandlersBase(List<HierarchyNodeTypeHandlerBase> handlers)
+        {
+            handlers.Clear();
+            foreach (var handler in EnumerateNodeTypeHandlersBase())
+                handlers.Add(handler);
+        }
         #endregion
     }
 }

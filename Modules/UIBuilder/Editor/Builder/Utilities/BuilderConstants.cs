@@ -62,11 +62,13 @@ namespace Unity.UI.Builder
         public static string UssPath_BuilderWindow_Themed => EditorGUIUtility.isProSkin ? UssPath_BuilderWindow_Dark : UssPath_BuilderWindow_Light;
 
         public const string UssPath_InspectorWindow = BuilderConstants.UIBuilderPackagePath + "/Inspector/BuilderInspector.uss";
+        public const string UssPath_InspectorVariable = BuilderConstants.UIBuilderPackagePath + "/Inspector/StyleSectionsVariables.uss";
         public const string UssPath_InspectorWindow_Dark = BuilderConstants.UIBuilderPackagePath + "/Inspector/BuilderInspectorDark.uss";
         public const string UssPath_InspectorWindow_Light = BuilderConstants.UIBuilderPackagePath + "/Inspector/BuilderInspectorLight.uss";
         public static string UssPath_InspectorWindow_Themed => EditorGUIUtility.isProSkin ? UssPath_InspectorWindow_Dark : UssPath_InspectorWindow_Light;
 
         public const string UssPath_BindingWindow = BuilderConstants.UIBuilderPackagePath + "/Inspector/BindingWindow.uss";
+        public const string UssPath_NewClassWindow = BuilderConstants.UIBuilderPackagePath + "/Inspector/NewClassWindow.uss";
 
         // Global Style Class Names
         public static readonly string HiddenStyleClassName = "unity-builder-hidden";
@@ -91,6 +93,7 @@ namespace Unity.UI.Builder
         public const string OpenBracket = "(";
         public const string CloseBracket = ")";
         public const string EllipsisText = "...";
+        public const string VariablePrefix = "--";
 
         // Notifications
         public static readonly string previewNotificationKey = "builder-preview-mode-notification";
@@ -163,8 +166,8 @@ namespace Unity.UI.Builder
         public static readonly string InspectorBindingIndicatorClassName = "unity-builder-foldout-binding-indicator";
         public static readonly string InspectorFieldBindingInlineEditingEnabledClassName = "unity-builder-binding-inline-editing-enabled";
         public static readonly string InspectorFixedItemHeightFieldClassName = "unity-builder-uxml-attribute__fixed-item-height";
-        public static readonly string InspectorShownNegativeWarningMessageClassName = "unity-builder-uxml-attribute__negative-warning--shown";
-        public static readonly string InspectorHiddenNegativeWarningMessageClassName = "unity-builder-uxml-attribute__negative-warning--hidden";
+        public static readonly string InspectorShownWarningMessageClassName = "unity-builder-uxml-attribute__negative-warning--shown";
+        public static readonly string InspectorHiddenWarningMessageClassName = "unity-builder-uxml-attribute__negative-warning--hidden";
         public static readonly string InspectorListViewAllowAddRemoveFieldClassName = "unity-builder-uxml-attribute__allow-add-remove";
 
         // Inspector Links VE Property Names
@@ -204,6 +207,9 @@ namespace Unity.UI.Builder
         public static readonly string ContextMenuRemoveBindingMessage = "Remove binding";
         public static readonly string ContextMenuEditInlineValueMessage = "Edit inline value...";
         public static readonly string ContextMenuUnsetInlineValueMessage = "Unset inline value";
+        public static readonly string ContextMenuExtractInlineValueMessage = "Extract Inlined Style to Selector";
+        public static readonly string ContextMenuExtractAllInlineValuesMessage = "Extract All Inlined Styles to Selector";
+        public static readonly string ContextMenuNewClassMessage = "New Class...";
         public static readonly string InspectorClassPillDoubleClickToCreate = "Double-click to create new USS selector.";
         public static readonly string InspectorClassPillDoubleClickToSelect = "Double-click to select and edit USS selector.";
         public static readonly string InspectorLocalStylesSectionTitleForSelector = "Styles";
@@ -219,6 +225,8 @@ namespace Unity.UI.Builder
         public static readonly string HeaderSectionHelpBoxMessage = "This control is not supported in Runtime UI. Remove it, or enable Editor Extension Authoring in the Library.";
         public static readonly string UnresolvedValue = "Unresolved";
         public static readonly string HeightIntFieldValueCannotBeNegativeMessage = "Please enter a positive number. Non-positive numbers will default to 1.";
+        public static readonly string VariableNameFieldMustBeValidMessage = "Name must only contain letters, numbers, '-' or '_'. No spaces or other special characters allowed.";
+        public static readonly string VariableEnumFieldMustBeValidMessage = "An empty Enum is not a valid value.";
         public static readonly string UnnamedValue = "<No Name>";
         public static readonly string ManualUIBuilderUrl = $"https://docs.unity3d.com/{Application.unityVersionVer}.{Application.unityVersionMaj}/Documentation/Manual/UIBuilder.html";
 
@@ -291,7 +299,7 @@ namespace Unity.UI.Builder
             {"flex", ""},
             {"flex-basis", "Initial main size of a flex item, on the main flex axis. The final layout might be smaller or larger, according to the flex shrinking and growing determined by the other flex properties."},
             {"flex-direction", "Direction of the main axis to layout children in a container."},
-            {"flex-grow", "Specifies how the item will shrink relative to the rest of the flexible items inside the same container."},
+            {"flex-grow", "Specifies how the item will grow relative to the rest of the flexible items inside the same container."},
             {"flex-shrink", "Specifies how the item will shrink relative to the rest of the flexible items inside the same container."},
             {"flex-wrap", "Placement of children over multiple lines if not enough space is available in this container."},
             {"font-size", "Font size to draw the element's text."},
@@ -445,6 +453,16 @@ namespace Unity.UI.Builder
                 {$"IntegerStyleField{FieldTooltipDictionarySeparator}-unity-slice-bottom", PixelOrInitialValue},
                 {$"IntegerStyleField{FieldTooltipDictionarySeparator}-unity-slice-right", PixelOrInitialValue},
                 {$"ObjectField{FieldTooltipDictionarySeparator}", "Assign an object by either dragging and dropping it, or by selecting it with the Object Picker."},
+                {$"BackgroundRepeat{FieldTooltipDictionarySeparator}NoRepeat", "value: no-repeat\n\nBackground image will not be repeated and will be displayed once in the background."},
+                {$"BackgroundRepeat{FieldTooltipDictionarySeparator}Repeat","value: repeat\n\nBackground image will only repeat horizontally, creating a tiled effect from left to right." },
+                {$"BackgroundRepeat{FieldTooltipDictionarySeparator}Round","value: round\n\nBackground image will be repeated as needed to fill the available space, while also resizing the image to ensure that there is no remaining space at the edges." },
+                {$"BackgroundRepeat{FieldTooltipDictionarySeparator}Space","value: space\n\nBackground image is repeated as much as possible without clipping. The first and last images are pinned to either side of the element, and whitespace is distributed evenly between the images." },
+                {$"BackgroundPositionX{FieldTooltipDictionarySeparator}Left", "Aligns the background image to the left side."},
+                {$"BackgroundPositionX{FieldTooltipDictionarySeparator}Center", "Centers the background image horizontally."},
+                {$"BackgroundPositionX{FieldTooltipDictionarySeparator}Right", "Aligns the background image to the right side."},
+                {$"BackgroundPositionY{FieldTooltipDictionarySeparator}Top", "Aligns the background image to the top edge."},
+                {$"BackgroundPositionY{FieldTooltipDictionarySeparator}Center", "Centers the background image vertically."},
+                {$"BackgroundPositionY{FieldTooltipDictionarySeparator}Bottom", "Aligns the background image to the bottom edge" },
             };
 
         public static readonly string FoldoutContainsBindingsString = "One or more properties contain a binding (resolved or unresolved).";
@@ -665,7 +683,7 @@ namespace Unity.UI.Builder
         //
 
         // Generic Dialog Messages
-        public static readonly string DialogOkOption = "Ok";
+        public static readonly string DialogOkOption = "OK";
         public static readonly string DialogCancelOption = "Cancel";
         public static readonly string DialogDiscardOption = "Discard changes and {0}";
         public static readonly string DialogAbortActionOption = "Do not {0}";

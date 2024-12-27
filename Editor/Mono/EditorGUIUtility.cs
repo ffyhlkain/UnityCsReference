@@ -352,6 +352,50 @@ namespace UnityEditor
         }
 
         /// <summary>
+        /// Use this container and helper class when implementing lock behaviour on a window when also using an <see cref="ActiveEditorTracker"/>.
+        /// </summary>
+        [Serializable]
+        internal class EditorLockTrackerWithActiveEditorTracker : EditorLockTracker
+        {
+            internal override bool isLocked
+            {
+                get
+                {
+                    if (m_Tracker != null)
+                    {
+                        base.isLocked = m_Tracker.isLocked;
+                        return m_Tracker.isLocked;
+                    }
+                    return base.isLocked;
+                }
+                set
+                {
+                    if (m_Tracker != null)
+                    {
+                        m_Tracker.isLocked = value;
+                    }
+                    base.isLocked = value;
+                }
+            }
+
+            [SerializeField, HideInInspector]
+            ActiveEditorTracker m_Tracker;
+
+            internal ActiveEditorTracker tracker
+            {
+                get { return m_Tracker; }
+                set
+                {
+                    m_Tracker = value;
+                    if (m_Tracker != null)
+                    {
+                        isLocked = m_Tracker.isLocked;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
         /// Use this container and helper class when implementing lock behaviour on a window.
         /// </summary>
         [Serializable]
@@ -919,7 +963,12 @@ namespace UnityEditor
             return ObjectContent(obj, type, ReferenceEquals(obj, null) ? 0 : obj.GetInstanceID());
         }
 
-        internal static GUIContent ObjectContent(UnityObject obj, Type type, int instanceID)
+        internal static GUIContent ObjectContent(UnityObject obj, Type type, bool showNullIcon)
+        {
+            return ObjectContent(obj, type, ReferenceEquals(obj, null) ? 0 : obj.GetInstanceID(), showNullIcon);
+        }
+
+        internal static GUIContent ObjectContent(UnityObject obj, Type type, int instanceID, bool showNullIcon = true)
         {
             if (obj)
             {
@@ -929,7 +978,7 @@ namespace UnityEditor
             else if (type != null)
             {
                 s_ObjectContent.text = GetTypeNameWithInfo(type.Name, instanceID);
-                s_ObjectContent.image = AssetPreview.GetMiniTypeThumbnail(type);
+                s_ObjectContent.image = showNullIcon ? AssetPreview.GetMiniTypeThumbnail(type) : null;
             }
             else
             {
@@ -962,9 +1011,9 @@ namespace UnityEditor
                 // from property.objectReferenceValue is not reliable, so we have to
                 // explicitly check property.objectReferenceInstanceIDValue if a property exists.
                 if (property != null && property.isValid)
-                    temp = ObjectContent(obj, type, property.objectReferenceInstanceIDValue);
+                    temp = ObjectContent(obj, type, property.objectReferenceInstanceIDValue, false);
                 else
-                    temp = ObjectContent(obj, type);
+                    temp = ObjectContent(obj, type, false);
             }
 
             if (property != null && property.isValid)
@@ -1279,6 +1328,12 @@ namespace UnityEditor
             set { EditorGUI.RecycledTextEditor.s_ActuallyEditing = value; }
         }
 
+        internal static bool renameWasCompleted
+        {
+            get { return EditorGUI.RecycledTextEditor.s_EditingWasCompleted; }
+            set { EditorGUI.RecycledTextEditor.s_EditingWasCompleted = value; }
+        }
+
         public static bool textFieldHasSelection
         {
             get { return EditorGUI.s_RecycledEditor.hasSelection; }
@@ -1376,7 +1431,7 @@ namespace UnityEditor
                     return s_LabelWidth;
 
                 if (hierarchyMode)
-                    return Mathf.Max(contextWidth * EditorGUI.kLabelWidthRatio - EditorGUI.kLabelWidthMargin, EditorGUI.kMinLabelWidth);
+                    return Mathf.Max(Mathf.Ceil(contextWidth * EditorGUI.kLabelWidthRatio) - EditorGUI.kLabelWidthMargin, EditorGUI.kMinLabelWidth);
                 return 150;
             }
             set { s_LabelWidth = value; }

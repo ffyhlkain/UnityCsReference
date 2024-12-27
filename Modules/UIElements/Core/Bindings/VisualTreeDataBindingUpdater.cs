@@ -16,10 +16,8 @@ namespace UnityEngine.UIElements
         UpdateSource
     }
 
-    class VisualTreeDataBindingsUpdater : BaseVisualTreeHierarchyTrackerUpdater
+    class VisualTreeDataBindingsUpdater : BaseVisualTreeUpdater
     {
-        public long frame { get; private set; }
-
         readonly struct VersionInfo
         {
             public readonly object source;
@@ -47,7 +45,12 @@ namespace UnityEngine.UIElements
         readonly HashSet<VisualElement> m_DataSourceChangedRequests = new();
         readonly HashSet<VisualElement> m_RemovedElements = new();
 
-        protected override void OnHierarchyChange(VisualElement ve, HierarchyChangeType type)
+        public VisualTreeDataBindingsUpdater()
+        {
+            panelChanged += OnPanelChanged;
+        }
+
+        protected void OnHierarchyChange(VisualElement ve, HierarchyChangeType type, IReadOnlyList<VisualElement> additionalContext = null)
         {
             // Invalidating cached data sources can do up to a full hierarchy traversal, so if nothing is registered, we
             // can safely skip the invalidation step completely.
@@ -56,21 +59,30 @@ namespace UnityEngine.UIElements
 
             switch (type)
             {
-                // We need to treat removed elements differently. If an element is removed, we need to force a full
-                // invalidation, unless we can detect that it's still part of the hierarchy (this can happen if structural
-                // changes happened outside of the panel).
-                case HierarchyChangeType.Remove:
+                case HierarchyChangeType.RemovedFromParent:
                     m_DataSourceChangedRequests.Remove(ve);
                     m_RemovedElements.Add(ve);
                     break;
-                // If the element was previously removed and then added, treat it as if it had moved, so we need to
-                // invalidate it doing minimal work.
-                case HierarchyChangeType.Add:
+                case HierarchyChangeType.AddedToParent:
+                case HierarchyChangeType.ChildrenReordered:
                     m_RemovedElements.Remove(ve);
                     m_DataSourceChangedRequests.Add(ve);
                     break;
-                default:
-                    m_DataSourceChangedRequests.Add(ve);
+                case HierarchyChangeType.AttachedToPanel:
+                    for (var i = 0; i < additionalContext.Count; ++i)
+                    {
+                        var added = additionalContext[i];
+                        m_RemovedElements.Remove(added);
+                        m_DataSourceChangedRequests.Add(ve);
+                    }
+                    break;
+                case HierarchyChangeType.DetachedFromPanel:
+                    for (var i = 0; i < additionalContext.Count; ++i)
+                    {
+                        var removed = additionalContext[i];
+                        m_DataSourceChangedRequests.Remove(ve);
+                        m_RemovedElements.Add(removed);
+                    }
                     break;
             }
 
@@ -79,8 +91,6 @@ namespace UnityEngine.UIElements
 
         public override void OnVersionChanged(VisualElement ve, VersionChangeType versionChangeType)
         {
-            base.OnVersionChanged(ve, versionChangeType);
-
             if ((versionChangeType & VersionChangeType.BindingRegistration) == VersionChangeType.BindingRegistration)
                 m_BindingRegistrationRequests.Add(ve);
 
@@ -135,12 +145,10 @@ namespace UnityEngine.UIElements
         private readonly HashSet<Binding> m_RanUpdate = new();
         private readonly HashSet<object> m_KnownSources = new();
         private readonly HashSet<Binding> m_DirtyBindings = new();
+        private BaseVisualElementPanel m_AttachedPanel;
 
         public override void Update()
         {
-            ++frame;
-            base.Update();
-
             ProcessAllBindingRequests();
             ProcessDataSourceChangedRequests();
 
@@ -269,7 +277,7 @@ namespace UnityEngine.UIElements
             {
                 // If the data source is not versioned, we touch the version every update to keep it "fresh"
                 if (source is not IDataSourceViewHashProvider versioned)
-                    return (true, version + 1);
+                    return (null != source, version + 1);
 
                 var currentVersion = versioned.GetViewHashCode();
 
@@ -281,7 +289,7 @@ namespace UnityEngine.UIElements
                 return (true, versioned.GetViewHashCode());
             }
 
-            return (true, 0L);
+            return (null != source, 0L);
         }
 
         private bool IsPrefix(in PropertyPath prefix, in PropertyPath path)
@@ -332,6 +340,20 @@ namespace UnityEngine.UIElements
             bindingManager.InvalidateCachedDataSource(m_DataSourceChangedRequests, m_RemovedElements);
             m_DataSourceChangedRequests.Clear();
             m_RemovedElements.Clear();
+        }
+
+        private void OnPanelChanged(BaseVisualElementPanel p)
+        {
+            if (m_AttachedPanel == p)
+                return;
+
+            if (null != m_AttachedPanel)
+                m_AttachedPanel.hierarchyChanged -= OnHierarchyChange;
+
+            m_AttachedPanel = p;
+
+            if (null != m_AttachedPanel)
+                m_AttachedPanel.hierarchyChanged += OnHierarchyChange;
         }
 
         protected override void Dispose(bool disposing)
@@ -432,7 +454,7 @@ namespace UnityEngine.UIElements
             data.Clear();
         }
 
-        internal override void PollElementsWithBindings(Action<VisualElement, IBinding> callback)
+        internal void PollElementsWithBindings(Action<VisualElement, IBinding> callback)
         {
             if (bindingManager.GetBoundElementsCount() > 0)
             {

@@ -59,14 +59,12 @@ namespace UnityEngine.UIElements
     /// Object to draw 2D vector graphics.
     /// </summary>
     /// <remarks>
-    /// <para>
     /// The example below demonstrates how to use the Painter2D class to draw content in a <see cref="VisualElement"/> with
     /// the <see cref="VisualElement.generateVisualContent"/> callback.
-    /// </para>
-    /// <para>
+    /// 
+    /// 
     /// You can also create a standalone <see cref="Painter2D.Painter2D"/> object to draw content offscreen,
     ///  and use the <see cref="Painter2D.SaveToVectorImage"/> method to save the painter content in a <see cref="VectorImage"/> asset.
-    /// </para>
     /// </remarks>
     /// <example>
     /// <code>
@@ -307,7 +305,7 @@ namespace UnityEngine.UIElements
         /// <summary>
         /// Begins a new sub-path at the provied coordinate.
         /// </summary>
-        /// <param name="pos">The position of the new sub-path.</param>
+        /// <param name="pos">The position of the new sub-path in the local space of the VisualElement or the VectorImage.</param>
         public void MoveTo(Vector2 pos)
         {
             if (!ValidateState())
@@ -349,7 +347,7 @@ namespace UnityEngine.UIElements
         /// <param name="radius">The radius of the arc.</param>
         /// <param name="startAngle">The starting angle the arc.</param>
         /// <param name="endAngle">The ending angle of the arc.</param>
-        /// <param name="antiClockwise">Whether the arc should draw in the anti-clockwise direction (default=false).</param>
+        /// <param name="direction">The direction of the arc (default=clock-wise).</param>
         public void Arc(Vector2 center, float radius, Angle startAngle, Angle endAngle, ArcDirection direction = ArcDirection.Clockwise)
         {
             if (!ValidateState())

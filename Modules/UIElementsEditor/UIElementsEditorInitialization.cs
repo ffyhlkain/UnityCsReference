@@ -2,21 +2,32 @@
 // Copyright (c) Unity Technologies. For terms of use, see
 // https://unity3d.com/legal/licenses/Unity_Reference_Only_License
 
+using System;
+using JetBrains.Annotations;
 using Unity.Jobs;
-using Unity.Properties;
 using Unity.Properties.Internal;
+using UnityEngine;
 using UnityEngine.Scripting;
 
 namespace UnityEditor.UIElements
 {
     static class UIElementsEditorInitialization
     {
+        [UsedImplicitly]
         [RequiredByNativeCode(optional:false)]
         public static void InitializeUIElementsEditorManaged()
         {
             var jobHandle = PropertiesEditorInitialization.GetInitializationJobHandle();
             new InitializeUIElementsJob().Schedule(jobHandle);
-            JobHandle.ScheduleBatchedJobs();
+            try
+            {
+                UxmlSerializedDataRegistry.RegisterUxmlSerializedDataTypes();
+                UxmlSerializedDataRegistry.RegisterCustomDependencies();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogException(ex);
+            }
         }
 
         struct InitializeUIElementsJob : IJob

@@ -2,11 +2,9 @@
 // Copyright (c) Unity Technologies. For terms of use, see
 // https://unity3d.com/legal/licenses/Unity_Reference_Only_License
 
-using System;
-using UnityEngine;
-using UnityEditor;
-using System.Linq;
 using UnityEditor.Build;
+using UnityEditor.Build.Profile;
+using UnityEngine;
 using TargetAttributes = UnityEditor.BuildTargetDiscovery.TargetAttributes;
 
 namespace UnityEditor.Modules
@@ -25,6 +23,24 @@ namespace UnityEditor.Modules
             m_playerSettingsEditor = settingsEditor;
 
             m_MTRendering = playerSettingsEditor.FindPropertyAssert("m_MTRendering");
+        }
+
+        public virtual void ConfigurePlatformProfile(SerializedObject serializedProfile)
+        {
+        }
+
+        public virtual bool CopyProjectSettingsPlayerSettingsToBuildProfile()
+        {
+            return false;
+        }
+
+        public virtual bool IsPlayerSettingsDataEqualToProjectSettings()
+        {
+            return true;
+        }
+
+        public virtual void OnActiveProfileChanged(BuildProfile previous, BuildProfile newProfile)
+        {
         }
 
         public virtual bool HasPublishSection()
@@ -127,10 +143,16 @@ namespace UnityEditor.Modules
             // For other platforms the "Multithreaded Rendering" feature is controlled by PlayerSettings::m_MTRendering. Default value is true (set during PlayerSettings::Reset)
             if (BuildTargetDiscovery.PlatformGroupHasFlag(namedBuildTarget.ToBuildTargetGroup(), TargetAttributes.IsMTRenderingDisabledByDefault))
             {
-                bool oldValue = PlayerSettings.GetMobileMTRendering(namedBuildTarget);
+                var playerSettings = playerSettingsEditor.m_SerializedObject.targetObject as PlayerSettings;
+                Debug.Assert(playerSettings != null);
+
+                bool oldValue = playerSettings.GetMobileMTRenderingInternal_Instance(namedBuildTarget.TargetName);
                 bool newValue = EditorGUILayout.Toggle(MultithreadedRenderingGUITooltip(), oldValue);
                 if (oldValue != newValue)
-                    PlayerSettings.SetMobileMTRendering(namedBuildTarget, newValue);
+                {
+                    playerSettings.SetMobileMTRenderingInternal_Instance(namedBuildTarget.TargetName, newValue);
+                    playerSettingsEditor.OnTargetObjectChangedDirectly();
+                }
             }
             else EditorGUILayout.PropertyField(m_MTRendering, m_MTRenderingTooltip);
         }

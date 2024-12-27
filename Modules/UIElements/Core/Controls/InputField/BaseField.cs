@@ -56,6 +56,15 @@ namespace UnityEngine.UIElements
         [ExcludeFromDocs, Serializable]
         public new abstract class UxmlSerializedData : BindableElement.UxmlSerializedData
         {
+            public new static void Register()
+            {
+                UxmlDescriptionCache.RegisterType(typeof(UxmlSerializedData), new UxmlAttributeNames[]
+                {
+                    new (nameof(label), "label"),
+                    new (nameof(value), "value"),
+                });
+            }
+
             #pragma warning disable 649
             [SerializeField, MultilineTextField] string label;
             [SerializeField, UxmlIgnore, HideInInspector] UxmlAttributeFlags label_UxmlAttributeFlags;
@@ -140,12 +149,10 @@ namespace UnityEngine.UIElements
         static CustomStyleProperty<float> s_LabelWidthRatioProperty = new CustomStyleProperty<float>("--unity-property-field-label-width-ratio");
         static CustomStyleProperty<float> s_LabelExtraPaddingProperty = new CustomStyleProperty<float>("--unity-property-field-label-extra-padding");
         static CustomStyleProperty<float> s_LabelBaseMinWidthProperty = new CustomStyleProperty<float>("--unity-property-field-label-base-min-width");
-        static CustomStyleProperty<float> s_LabelExtraContextWidthProperty = new CustomStyleProperty<float>("--unity-base-field-extra-context-width");
 
         private float m_LabelWidthRatio;
         private float m_LabelExtraPadding;
         private float m_LabelBaseMinWidth;
-        private float m_LabelExtraContextWidth;
 
         private VisualElement m_VisualInput;
 
@@ -213,24 +220,22 @@ namespace UnityEngine.UIElements
             }
             set
             {
-                if (!EqualityComparer<TValueType>.Default.Equals(m_Value, value) || showMixedValue)
+                if (!EqualsCurrentValue(value) || showMixedValue)
                 {
+                    var previousValue = m_Value;
+                    SetValueWithoutNotify(value);
+
+                    // We set showMixedValue after setting the value or it will revert the text back to the previous value. (UUUM-73855)
                     showMixedValue = false;
+
                     if (panel != null)
                     {
-                        var previousValue = m_Value;
-                        SetValueWithoutNotify(value);
-
                         using (ChangeEvent<TValueType> evt = ChangeEvent<TValueType>.GetPooled(previousValue, m_Value))
                         {
                             evt.elementTarget = this;
                             SendEvent(evt, dispatchMode);
                         }
                         NotifyPropertyChanged(valueProperty);
-                    }
-                    else
-                    {
-                        SetValueWithoutNotify(value);
                     }
                 }
             }
@@ -242,6 +247,8 @@ namespace UnityEngine.UIElements
         public Label labelElement { get; private set; }
         /// <summary>
         /// The string representing the label that will appear beside the field.
+        /// If the string is empty, the label element is removed from the hierarchy.
+        /// If the string is not empty, the label element is added to the hierarchy.
         /// </summary>
         [CreateProperty]
         public string label
@@ -350,11 +357,18 @@ namespace UnityEngine.UIElements
             m_VisualInput = null;
         }
 
+        /// <summary>
+        /// Initializes and returns an instance of <see cref="BaseField"/>.
+        /// </summary>
+        /// <param name="label">The text to use as a label.</param>
+        /// <param name="visualInput">The visual element to use as the input for the field.</param>
         protected BaseField(string label, VisualElement visualInput)
             : this(label)
         {
             this.visualInput = visualInput;
         }
+
+        internal virtual bool EqualsCurrentValue(TValueType value) => EqualityComparer<TValueType>.Default.Equals(m_Value, value);
 
         private void OnAttachToPanel(AttachToPanelEvent e)
         {
@@ -404,9 +418,6 @@ namespace UnityEngine.UIElements
             // because the uitk margin is being taken in account later.
             m_LabelExtraPadding = 37.0f;
             m_LabelBaseMinWidth = 123.0f;
-
-            // The inspector panel has a 1px border we need to consider as part of the context width.
-            m_LabelExtraContextWidth = 1.0f;
 
             RegisterCallback<CustomStyleResolvedEvent>(OnCustomStyleResolved);
             AddToClassList(inspectorFieldUssClassName);
@@ -459,11 +470,6 @@ namespace UnityEngine.UIElements
                 m_LabelBaseMinWidth = labelBaseMinWidth;
             }
 
-            if (evt.customStyle.TryGetValue(s_LabelExtraContextWidthProperty, out var labelExtraContextWidth))
-            {
-                m_LabelExtraContextWidth = labelExtraContextWidth;
-            }
-
             AlignLabel();
         }
 
@@ -494,7 +500,7 @@ namespace UnityEngine.UIElements
             labelElement.style.minWidth = Mathf.Max(minWidth, 0);
 
             // Formula to follow IMGUI label width settings
-            var newWidth = (contextWidthElement.resolvedStyle.width + m_LabelExtraContextWidth) * m_LabelWidthRatio - totalPadding;
+            var newWidth = Mathf.Ceil(contextWidthElement.resolvedStyle.width * m_LabelWidthRatio) - totalPadding;
             if (Mathf.Abs(labelElement.resolvedStyle.width - newWidth) > UIRUtility.k_Epsilon)
             {
                 labelElement.style.width = Mathf.Max(0f, newWidth);

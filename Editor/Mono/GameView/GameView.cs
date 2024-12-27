@@ -86,6 +86,7 @@ namespace UnityEditor
         [SerializeField] bool[] m_LowResolutionForAspectRatios = new bool[0];
         [SerializeField] int m_XRRenderMode = 0;
         [SerializeField] RenderTexture m_RenderTexture;
+        [SerializeField] bool m_showToolbar = true;
 
         int m_SizeChangeID = int.MinValue;
 
@@ -210,7 +211,10 @@ namespace UnityEditor
 
         Rect GetViewInWindow(Rect pos)
         {
-            return new Rect(0, EditorGUI.kWindowToolbarHeight, pos.width, pos.height - EditorGUI.kWindowToolbarHeight);
+            if (showToolbar)
+                return new Rect(0, EditorGUI.kWindowToolbarHeight, pos.width, pos.height - EditorGUI.kWindowToolbarHeight);
+            
+            return new Rect(0, 0, pos.width, pos.height);
         }
 
         Rect GetViewPixelRect(Rect viewRectInWindow)
@@ -309,6 +313,12 @@ namespace UnityEditor
         Vector2 gameMouseOffset { get { return -viewInWindow.position - targetInView.position; } }
 
         float gameMouseScale { get { return backingScale / m_ZoomArea.scale.y; } }
+        
+        private bool showToolbar
+        {
+            get => m_showToolbar;
+            set => m_showToolbar = value;
+        }
 
         internal bool drawGizmos
         {
@@ -332,6 +342,7 @@ namespace UnityEditor
             prevSizeGroupType = (int)currentSizeGroupType;
             titleContent = GetLocalizedTitleContent();
             UpdateZoomAreaAndParent();
+            showToolbar = ModeService.HasCapability(ModeCapability.GameViewToolbar, true);
 
             ModeService.modeChanged += OnEditorModeChanged;
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
@@ -731,6 +742,8 @@ namespace UnityEditor
                     return 2;
                 case XRMirrorViewBlitMode.SideBySideOcclusionMesh:
                     return 3;
+                case XRMirrorViewBlitMode.MotionVectors:
+                    return 4;
             }
         }
 
@@ -746,6 +759,8 @@ namespace UnityEditor
                     return XRMirrorViewBlitMode.SideBySide;
                 case 3:
                     return XRMirrorViewBlitMode.SideBySideOcclusionMesh;
+                case 4:
+                    return XRMirrorViewBlitMode.MotionVectors;
             }
         }
 
@@ -764,6 +779,9 @@ namespace UnityEditor
                     break;
                 case 3:
                     UnityEngine.XR.XRSettings.gameViewRenderMode = UnityEngine.XR.GameViewRenderMode.OcclusionMesh;
+                    break;
+                case 4:
+                    UnityEngine.XR.XRSettings.gameViewRenderMode = UnityEngine.XR.GameViewRenderMode.MotionVectors;
                     break;
             }
 
@@ -866,6 +884,14 @@ namespace UnityEditor
             {
                 m_Parent.EnableVSync(false);
             }
+            else if (state == PlayModeStateChange.EnteredEditMode)
+            {
+                // UUM-76326 - Ensure CursorLock is disabled in EditMode in case a script locks it while
+                // exiting PlayMode. In this scenario, the cursor lock state is maintained and will re-engage
+                // in the next PlayMode session.
+                // NOTE: For safety the user must still click the GameView before cursor lock is allowed again.
+                AllowCursorLockAndHide(false);
+            }
         }
 
         void OnBecameVisible()
@@ -895,6 +921,7 @@ namespace UnityEditor
 
         private void OnEditorModeChanged(ModeService.ModeChangedArgs args)
         {
+            showToolbar = ModeService.HasCapability(ModeCapability.GameViewToolbar, true);
             Repaint();
         }
 
@@ -933,10 +960,14 @@ namespace UnityEditor
                 UpdateZoomAreaAndParent();
             }
 
-            DoToolbarGUI();
+            if (showToolbar)
+                DoToolbarGUI();
 
             if (type == EventType.MouseDown || type == EventType.MouseUp)
+            {
                 EditorApplication.globalEventHandler?.Invoke();
+                EditorApplication.shortcutHelperBarEventHandler?.Invoke();
+            }
 
             // This isn't ideal. Custom Cursors set by editor extensions for other windows can leak into the game view.
             // To fix this we should probably stop using the global custom cursor (intended for runtime) for custom editor cursors.
@@ -944,8 +975,10 @@ namespace UnityEditor
             if (EditorApplication.isPlayingOrWillChangePlaymode)
                 EditorGUIUtility.AddCursorRect(viewInWindow, MouseCursor.CustomCursor);
 
+            var playing = EditorApplication.isPlaying && !EditorApplication.isPaused;
+
             // Gain mouse lock when clicking on game view content, unless game is paused
-            if (!EditorApplication.isPaused && type == EventType.MouseDown && viewInWindow.Contains(Event.current.mousePosition))
+            if (playing && type == EventType.MouseDown && viewInWindow.Contains(Event.current.mousePosition))
             {
                 AllowCursorLockAndHide(true);
             }
@@ -956,7 +989,6 @@ namespace UnityEditor
             }
 
             // We hide sliders when playing, and also when we are zoomed out beyond canvas edges
-            var playing = EditorApplication.isPlaying && !EditorApplication.isPaused;
             var targetInContentCached = targetInContent;
             m_ZoomArea.hSlider = !playing && m_ZoomArea.shownArea.width < targetInContentCached.width;
             m_ZoomArea.vSlider = !playing && m_ZoomArea.shownArea.height < targetInContentCached.height;

@@ -15,6 +15,7 @@ using UnityEngine.Rendering;
 using UnityEngine.Internal;
 using UnityEngine.SceneManagement;
 using Object = UnityEngine.Object;
+using UnityEditor.ShortcutManagement;
 
 namespace UnityEditor
 {
@@ -327,11 +328,11 @@ namespace UnityEditor
             if (!editor || editor.hideInspector)
                 return true;
 
-            if (editor.inspectorMode != InspectorMode.Normal)
+            // Check for missing scripts or check is serializedObject can be created.
+            if (editor.target == null && editor.serializedObject?.FindProperty("m_Script") != null)
                 return false;
 
-            // Check for missing scripts
-            if (editor.target == null && editor.serializedObject?.FindProperty("m_Script") != null)
+            if (editor.inspectorMode != InspectorMode.Normal)
                 return false;
 
             return IsHiddenInInspector(editor.target);
@@ -409,6 +410,8 @@ namespace UnityEditor
         {
             Tools.s_ButtonDown = -1;
             GUIUtility.hotControl = 0;
+            //Delay call because the freezing of the editor is affecting the active clutch shortcuts resetting properly
+            EditorApplication.delayCall += () => ShortcutIntegration.instance.trigger.ResetActiveClutches();
         }
 
         internal static void DisplayCustomMenu(Rect position, string[] options, int[] selected, SelectMenuItemFunction callback, object userData)

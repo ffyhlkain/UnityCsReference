@@ -264,7 +264,7 @@ namespace UnityEditor.Overlays
                     return (DockZone)i;
             return DockZone.Floating;
         }
-
+        
         // used by tests
         [EditorBrowsable(EditorBrowsableState.Never)]
         internal OverlayContainer GetDockZoneContainer(DockZone zone)
@@ -293,6 +293,8 @@ namespace UnityEditor.Overlays
 
         [SerializeField]
         bool m_OverlaysVisible = true;
+        
+        bool m_OverlaysSupportEnabled = true;
 
         VisualElement m_RootVisualElement;
         internal EditorWindow containerWindow { get; set; }
@@ -328,24 +330,68 @@ namespace UnityEditor.Overlays
 
         internal Action afterOverlaysInitialized;
         internal event Action<bool> overlaysEnabledChanged;
+        internal event Action<bool> overlaysSupportEnabledChanged;
 
         internal event Action overlayListChanged;
 
         public bool overlaysEnabled
         {
-            get => m_Containers.All(x => x.style.display != DisplayStyle.None);
+            get => m_Containers != null && m_OverlaysVisible;
 
             set
             {
-                m_OverlaysVisible = value;
+                var changed = m_OverlaysVisible != value;
+                if (changed)
+                    m_OverlaysVisible = value;
 
-                if (value == overlaysEnabled)
-                    return;
-
+                // Ensure the containers' state refreshes in case m_OverlaysVisible value is somehow desynced from container state
+                var allContainersMatchEnabledState = true;
                 foreach (var container in m_Containers)
-                    container.style.display = value ? DisplayStyle.Flex : DisplayStyle.None;
+                {
+                    if (container.style.display != (value ? DisplayStyle.Flex : DisplayStyle.None))
+                    {
+                        allContainersMatchEnabledState = false;
+                        break;
+                    }
+                }
+                if (!allContainersMatchEnabledState)
+                {
+                    foreach (var container in m_Containers)
+                        container.style.display = value ? DisplayStyle.Flex : DisplayStyle.None;
+                }
 
-                overlaysEnabledChanged?.Invoke(value);
+                if (changed)
+                    overlaysEnabledChanged?.Invoke(m_OverlaysVisible);
+            }
+        }
+
+        internal bool overlaysSupportEnabled
+        {
+            get => m_OverlaysSupportEnabled;
+
+            set
+            {
+                if (value != m_OverlaysSupportEnabled)
+                {
+                    m_OverlaysSupportEnabled = value;
+
+                    if (!m_OverlaysSupportEnabled)
+                    {
+                        // Ensure no lingering popup is left open
+                        ClosePopupOverlay();
+                        // Hide all overlay containers
+                        foreach (var container in m_Containers)
+                            container.style.display = DisplayStyle.None;
+                    }
+                    // Unhide overlay containers if they're enabled when reactivating support
+                    else if (overlaysEnabled)
+                    {
+                        foreach (var container in m_Containers)
+                            container.style.display = DisplayStyle.Flex;
+                    }
+
+                    overlaysSupportEnabledChanged?.Invoke(value);
+                }
             }
         }
 
@@ -442,6 +488,8 @@ namespace UnityEditor.Overlays
             floatingContainer.RegisterCallback<GeometryChangedEvent>(GeometryChanged);
             rootVisualElement.RegisterCallback<MouseEnterEvent>(OnMouseEnter);
             rootVisualElement.RegisterCallback<MouseLeaveEvent>(OnMouseLeave);
+            EditorWindow.windowFocusChanged += OnFocusedWindowChanged;
+
         }
 
         void OnDetachedFromPanel(DetachFromPanelEvent evt)
@@ -449,12 +497,32 @@ namespace UnityEditor.Overlays
             floatingContainer.UnregisterCallback<GeometryChangedEvent>(GeometryChanged);
             rootVisualElement.UnregisterCallback<MouseEnterEvent>(OnMouseEnter);
             rootVisualElement.UnregisterCallback<MouseLeaveEvent>(OnMouseLeave);
+            EditorWindow.windowFocusChanged -= OnFocusedWindowChanged;
         }
 
         internal void OnContainerWindowDisabled()
         {
+            if (containerWindow != null)
+            {
+                var overlayCanvasesData = OverlayCanvasesData.instance;
+                var containerTypeWindows = Resources.FindObjectsOfTypeAll(containerWindow.GetType());
+                // This closing container is last instance of its type
+                if (containerTypeWindows.Length <= 1)
+                {
+                    // Ensures m_SaveData is refreshed.
+                    OnBeforeSerialize();
+                    overlayCanvasesData.AddAndSaveCanvasData(containerWindow, m_SaveData);
+                }
+            }
+            
             foreach (var overlay in m_Overlays)
                 overlay.OnWillBeDestroyed();
+        }
+
+        void OnFocusedWindowChanged()
+        {
+            if (EditorWindow.focusedWindow == containerWindow)
+                OverlayCanvasesData.instance.SetLastActiveCanvasForWindowType(this);
         }
 
         void OnMouseEnter(MouseEnterEvent evt)
@@ -493,7 +561,7 @@ namespace UnityEditor.Overlays
         // clamp all overlays to  root visual element's new bounds
         void GeometryChanged(GeometryChangedEvent evt)
         {
-            if (!overlaysEnabled)
+            if (!overlaysEnabled || !overlaysSupportEnabled)
                 return;
 
             foreach (var overlay in m_Overlays)
@@ -551,13 +619,32 @@ namespace UnityEditor.Overlays
             // init all overlays
             foreach (var overlayType in overlayTypes)
                 AddOverlay(OverlayUtilities.CreateOverlay(overlayType));
-
+            
+            // No save data deserialized from layout or this is a new instance
             if (m_SaveData == null || m_SaveData.Count < 1)
             {
-                var preset = OverlayPresetManager.GetDefaultPreset(window.GetType());
-                if(preset != null && preset.saveData != null)
-                    m_SaveData = new List<SaveData>(preset.saveData);
+                var containerTypeWindows = Resources.FindObjectsOfTypeAll(containerWindow.GetType());
+                var overlayCanvasesData = OverlayCanvasesData.instance;
+                
+                // If our container is not the first instance of its type (i.e. container window is duplicate),
+                // we want to "inherit" overlay save data from the last focused overlay canvas.
+                if (containerTypeWindows.Length > 1 && overlayCanvasesData.TryGetLastActiveCanvasForWindowType(containerWindow, out var lastActiveCanvas))
+                {
+                    lastActiveCanvas.CopySaveData(out var lastActiveCanvasData);
+                    m_SaveData = new List<SaveData>(lastActiveCanvasData);
+                }
+                // Otherwise check if SaveData's been serialized in OverlayCanvasesData asset during last window close of container type.
+                else if (!overlayCanvasesData.GetCanvasSaveData(containerWindow, out m_SaveData))
+                {
+                    var preset = OverlayPresetManager.GetDefaultPreset(window.GetType());
+                    if (preset != null && preset.saveData != null)
+                        m_SaveData = new List<SaveData>(preset.saveData);
+                }
             }
+
+            // If save data is still null at this point, initialize it to empty list as code down the line is not expecting it to be null
+            if (m_SaveData == null)
+                m_SaveData = new List<SaveData>();
 
             RestoreOverlays();
             Profiler.EndSample();
@@ -690,7 +777,7 @@ namespace UnityEditor.Overlays
 
         public void ShowPopup<T>() where T : Overlay, new()
         {
-            if (ClosePopupOverlay())
+            if (ClosePopupOverlay() || !overlaysSupportEnabled)
                 return;
 
             var popup = OverlayPopup.CreateAtCanvasCenter(this, CreateOverlayForPopup<T>());
@@ -705,12 +792,15 @@ namespace UnityEditor.Overlays
                 return;
             }
 
+            if (!overlaysSupportEnabled)
+                return;
+
             ShowPopup<T>(PointerDeviceState.GetPointerPosition(PointerId.mousePointerId, ContextType.Editor));
         }
 
         public void ShowPopup<T>(Vector2 position) where T : Overlay, new()
         {
-            if (ClosePopupOverlay())
+            if (ClosePopupOverlay() || !overlaysSupportEnabled)
                 return;
 
             var popup = OverlayPopup.CreateAtPosition(this, CreateOverlayForPopup<T>(), position);
@@ -747,21 +837,19 @@ namespace UnityEditor.Overlays
                 if (evt.relatedTarget == null && m_PopupOverlay.containsCursor)
                     EditorApplication.delayCall += m_PopupOverlay.Focus;
                 else
-                {
                     ClosePopupOverlay();
-                    popup.overlay.OnWillBeDestroyed();
-                }
             });
 
             rootVisualElement.Add(m_PopupOverlay);
             m_PopupOverlay.Focus();
         }
 
-        bool ClosePopupOverlay()
+        internal bool ClosePopupOverlay()
         {
             if (m_PopupOverlay == null)
                 return false;
 
+            m_PopupOverlay.overlay.OnWillBeDestroyed();
             m_PopupOverlay.RemoveFromHierarchy();
             m_PopupOverlay = null;
             return true;
@@ -876,12 +964,13 @@ namespace UnityEditor.Overlays
 
             if (attrib.defaultDockPosition == DockPosition.Top)
             {
-                var index = Mathf.Min(attrib.defaultDockIndex, container.GetSectionCount(OverlayContainerSection.BeforeSpacer));
+                var index = Mathf.Min(attrib.defaultDockIndex, container.GetSectionCount(OverlayContainerSection.BeforeSpacer) - (container.ContainsOverlay(overlay, OverlayContainerSection.BeforeSpacer) ? 1 : 0));
+
                 overlay.DockAt(container, OverlayContainerSection.BeforeSpacer, index);
             }
             else if (attrib.defaultDockPosition == DockPosition.Bottom)
             {
-                var index = Mathf.Min(attrib.defaultDockIndex, container.GetSectionCount(OverlayContainerSection.AfterSpacer));
+                var index = Mathf.Min(attrib.defaultDockIndex, container.GetSectionCount(OverlayContainerSection.AfterSpacer) - (container.ContainsOverlay(overlay, OverlayContainerSection.AfterSpacer) ? 1 : 0));
                 overlay.DockAt(container, OverlayContainerSection.AfterSpacer, index);
             }
             else
@@ -906,7 +995,7 @@ namespace UnityEditor.Overlays
         {
             if(data == null)
                 data = FindSaveData(overlay);
-
+            
             EditorJsonUtility.FromJsonOverwrite(data.contents, overlay);
 
             #pragma warning disable 618
@@ -923,12 +1012,14 @@ namespace UnityEditor.Overlays
             if(container == null)
                 container = overlay is ToolbarOverlay ? defaultToolbarContainer : defaultContainer;
 
+
+
             // Overlays are sorted by their index in containers so we can directly add them to top or bottom without
             // thinking of order
-            if (data.dockPosition == DockPosition.Top)
-                overlay.DockAt(container, OverlayContainerSection.BeforeSpacer, container.GetSectionCount(OverlayContainerSection.BeforeSpacer));
+            if (data.dockPosition == DockPosition.Top || container is FloatingOverlayContainer)
+                overlay.DockAt(container, OverlayContainerSection.BeforeSpacer);
             else if (data.dockPosition == DockPosition.Bottom)
-                overlay.DockAt(container, OverlayContainerSection.AfterSpacer, container.GetSectionCount(OverlayContainerSection.AfterSpacer));
+                overlay.DockAt(container, OverlayContainerSection.AfterSpacer);
             else
                 throw new Exception("data.dockPosition is not Top or Bottom, did someone add a new one?");
 

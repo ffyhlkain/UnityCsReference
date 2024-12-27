@@ -242,7 +242,7 @@ namespace UnityEditor.Search
         public IndexingOptions indexingOptions => (IndexingOptions)settings.options.GetHashCode();
 
         [SerializeField] public Settings settings;
-        [SerializeField, HideInInspector] public byte[] bytes;
+        public long indexSize { get; private set; }
 
         [NonSerialized] private int m_ProductionLimit = 99;
         [NonSerialized] private int m_InstanceID = 0;
@@ -381,20 +381,29 @@ namespace UnityEditor.Search
                 return;
 
             bool updateViews = false;
+            foreach (var p in FilterIndexes(deleted))
+            {
+                var db = Find(p);
+                if (db)
+                    updateViews = s_DBs.Remove(db);
+            }
+
             foreach (var p in FilterIndexes(updated))
             {
                 var db = Find(p);
                 if (db)
                     continue;
                 s_DBs.Add(AssetDatabase.LoadAssetAtPath<SearchDatabase>(p));
-                updateViews = true;
+                updateViews |= true;
             }
 
-            foreach (var p in FilterIndexes(deleted))
+            foreach (var p in FilterIndexes(moved))
             {
                 var db = Find(p);
                 if (db)
-                    updateViews |= s_DBs.Remove(db);
+                    continue;
+                s_DBs.Add(AssetDatabase.LoadAssetAtPath<SearchDatabase>(p));
+                updateViews |= true;
             }
 
             if (updateViews || s_DBs.RemoveAll(db => !db) > 0)
@@ -506,10 +515,8 @@ namespace UnityEditor.Search
             m_InstanceID = GetInstanceID();
 
             Log("OnEnable");
-            if (bytes?.Length > 0)
-                Dispatcher.Enqueue(Load);
-            else
-                Dispatcher.Enqueue(LoadAsync);
+
+            Dispatcher.Enqueue(LoadAsync);
         }
 
         internal void OnDisable()
@@ -521,6 +528,7 @@ namespace UnityEditor.Search
             m_CurrentResolveTask = null;
             m_CurrentUpdateTask?.Dispose();
             m_CurrentUpdateTask = null;
+            index?.Dispose();
         }
 
         private void LoadAsync()
@@ -555,37 +563,12 @@ namespace UnityEditor.Search
             if (loaded) status += "L";
             if (updating) status += "~";
             Debug.LogFormat(logType, LogOption.None, this, $"({m_InstanceID}, {status}) <b>{settings.name}</b>.<b>{callName}</b> {string.Join(", ", args)}" +
-                $" {Utils.FormatBytes(bytes?.Length ?? 0)}, {index?.documentCount ?? 0} documents, {index?.indexCount ?? 0} elements");
+                $" {index?.documentCount ?? 0} documents, {index?.indexCount ?? 0} elements");
         }
 
         public void Report(string status, params string[] args)
         {
             Log(status, args);
-        }
-
-        private void Load()
-        {
-            if (!this || bytes == null || bytes.Length == 0)
-            {
-                LoadingState = LoadState.Error;
-                return;
-            }
-
-            LoadingState = LoadState.Loading;
-            loaded = false;
-            var loadTask = new Task("Load", $"Reading {name.ToLowerInvariant()} search index", (task, data) => WaitForReadComplete(task, data, AssignNewIndexAndSetup), this);
-            loadTask.RunThread(() =>
-            {
-                var step = 0;
-                loadTask.Report($"Reading {bytes.Length} bytes...");
-                var newIndex = new SearchIndexer();
-                if (!newIndex.LoadBytes(bytes))
-                    Debug.LogError($"Failed to load {name} index. Please re-import it.", this);
-
-                loadTask.Report(++step, step + 1);
-
-                Dispatcher.Enqueue(() => loadTask.Resolve(new TaskData(bytes, newIndex, true)));
-            });
         }
 
         private void IncrementalLoad(string indexPath)
@@ -599,31 +582,36 @@ namespace UnityEditor.Search
                 var fileBytes = File.ReadAllBytes(indexPath);
 
                 var newIndex = new AssetIndexer(settings);
-                if (!newIndex.LoadBytes(fileBytes))
-                    throw new Exception($"Failed to load {indexPath}.");
+                IncrementLoadBytes(fileBytes, loadTask, newIndex, $"Failed to load {indexPath}.");
+            });
+        }
 
-                var deletedAssets = new HashSet<string>();
-                foreach (var d in newIndex.GetDocuments())
+        private void IncrementLoadBytes(byte[] indexerBytes, Task loadTask, ObjectIndexer indexer, string loadFailedMessage)
+        {
+            if (!indexer.LoadBytes(indexerBytes))
+                throw new Exception(loadFailedMessage);
+
+            var deletedAssets = new HashSet<string>();
+            foreach (var d in indexer.GetDocuments())
+            {
+                if (d.valid && (!File.Exists(d.source) && !Directory.Exists(d.source)))
+                    deletedAssets.Add(d.source);
+            }
+
+            Dispatcher.Enqueue(() =>
+            {
+                if (!this)
                 {
-                    if (d.valid && (!File.Exists(d.source) && !Directory.Exists(d.source)))
-                        deletedAssets.Add(d.source);
+                    loadTask.Resolve(null, completed: true);
+                    return;
                 }
 
-                Dispatcher.Enqueue(() =>
-                {
-                    if (!this)
-                    {
-                        loadTask.Resolve(null, completed: true);
-                        return;
-                    }
+                loadTask.Report($"Checking for changes...", -1);
+                var diff = SearchMonitor.GetDiff(indexer.timestamp, deletedAssets, path => KeepChangesetPredicate(path, indexer));
+                if (!diff.empty)
+                    IncrementalUpdate(diff);
 
-                    loadTask.Report($"Checking for changes...", -1);
-                    var diff = SearchMonitor.GetDiff(newIndex.timestamp, deletedAssets, path => KeepChangesetPredicate(path, newIndex));
-                    if (!diff.empty)
-                        IncrementalUpdate(diff);
-
-                    loadTask.Resolve(new TaskData(fileBytes, newIndex, diff.empty));
-                });
+                loadTask.Resolve(new TaskData(indexerBytes, indexer, diff.empty));
             });
         }
 
@@ -784,6 +772,10 @@ namespace UnityEditor.Search
 
             combineIndexer.Start();
             combineIndexer.CombineIndexes(artifactDbs, settings.baseScore, indexName, task);
+            foreach (var searchIndexer in artifactDbs)
+            {
+                searchIndexer.Dispose();
+            }
 
             if (task.Canceled())
                 return;
@@ -844,13 +836,11 @@ namespace UnityEditor.Search
                 return;
             }
 
+            // Do not dispose of data.combinedIndex, since we are using its data into index
             index.ApplyFrom(data.combinedIndex);
-            bytes = data.bytes;
-            // Do not cache indexes while running tests
-            if (!Utils.IsRunningTests())
-                SaveIndex(data.bytes, Setup);
-            else
-                Setup();
+            GC.SuppressFinalize(data.combinedIndex);
+            indexSize = data.bytes.Length;
+            SaveIndex(data.bytes, Setup);
             EmitDatabaseReady(this);
         }
 
@@ -870,8 +860,10 @@ namespace UnityEditor.Search
                 return;
             }
 
+            // Do not dispose of data.combinedIndex, since we are using its data into index
             index.ApplyFrom(data.combinedIndex);
-            bytes = data.bytes;
+            GC.SuppressFinalize(data.combinedIndex);
+            indexSize = data.bytes.Length;
             Setup();
 
             if (data.userData is true)
@@ -902,13 +894,26 @@ namespace UnityEditor.Search
             return $"{k_QuickSearchLibraryPath}/{settings.guid}.{SearchIndexEntryImporter.version}.{GetIndexTypeSuffix()}";
         }
 
-        private static void SaveIndex(string backupIndexPath, byte[] saveBytes, Task saveTask = null)
+        internal void SaveIndex(string backupIndexPath = null)
+        {
+            backupIndexPath ??= GetBackupIndexPath(true);
+            index.SaveIndexToDisk(backupIndexPath);
+            indexSize = 0;
+            var info = new FileInfo(backupIndexPath);
+            if (info.Exists)
+            {
+                indexSize = info.Length;
+            }
+        }
+
+        private void SaveIndex(string backupIndexPath, byte[] saveBytes, Task saveTask = null)
         {
             try
             {
                 saveTask?.Report("Saving search index");
                 var tempSave = Path.GetTempFileName();
                 File.WriteAllBytes(tempSave, saveBytes);
+                indexSize = saveBytes.Length;
 
                 try
                 {
@@ -1051,10 +1056,12 @@ namespace UnityEditor.Search
             task.RunThread(() =>
             {
                 using var writeScope = new WriteLockScope(m_ImmutableLock);
+
                 index.Merge(changeset.removed, data.combinedIndex, baseScore,
                     (di, indexer, count) => OnDocumentMerged(indexer, indexName, di), task);
+                data.combinedIndex.Dispose();
                 if (saveIndexCache)
-                    SaveIndex(savePath, index.SaveBytes(), task);
+                    SaveIndex(savePath);
             }, () => ResolveIncrementalUpdate(task));
         }
 

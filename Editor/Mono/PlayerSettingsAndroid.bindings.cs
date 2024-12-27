@@ -5,6 +5,7 @@
 using UnityEngine;
 using UnityEngine.Bindings;
 using System;
+using System.Text.RegularExpressions;
 
 namespace UnityEditor
 {
@@ -110,6 +111,9 @@ namespace UnityEditor
 
         // Android 14.0, API level 34
         AndroidApiLevel34 = 34,
+
+        // Android 15.0, API level 35
+        AndroidApiLevel35 = 35,
     }
 
     // Preferred application install location
@@ -210,6 +214,18 @@ namespace UnityEditor
         GameActivity = 1 << 1
     }
 
+    [Obsolete("AndroidDeviceFilterData is obsolete. Use UnityEngine.VulkanDeviceFilterData instead.")]
+    public struct AndroidDeviceFilterData
+    {
+        public string vendorName;
+        public string deviceName;
+        public string brandName;
+        public string productName;
+        public string androidOsVersionString;
+        public string vulkanApiVersionString;
+        public string driverVersionString;
+    }
+
     // Player Settings is where you define various parameters for the final game that you will build in Unity. Some of these values are used in the Resolution Dialog that launches when you open a standalone game.
     public partial class PlayerSettings : UnityEngine.Object
     {
@@ -267,13 +283,27 @@ namespace UnityEditor
                 set;
             }
 
-            // Should window resizing be allowed.
-            public static extern bool resizableWindow
+            [Obsolete("resizableWindow has been deprecated and renamed to match Android documentation. Please use resizeableActivity instead. (UnityUpgradable) -> resizeableActivity", false)]
+            // Should application resizing be allowed (deprecated old naming).
+            public static bool resizableWindow
             {
-                [NativeMethod("GetAndroidResizableWindow")]
+                set => resizeableActivity = value;
+                get => resizeableActivity;
+            }
+
+            // Should application resizing be allowed (new naming).
+            public static extern bool resizeableActivity
+            {
+                [NativeMethod("GetAndroidResizeableActivity")]
                 get;
-                [NativeMethod("SetAndroidResizableWindow")]
+                [NativeMethod("SetAndroidResizeableActivity")]
                 set;
+            }
+
+            public static bool runWithoutFocus
+            {
+                set => runInBackground = value;
+                get => runInBackground;
             }
 
             // Full screen mode. Full screen window or windowed.
@@ -287,14 +317,14 @@ namespace UnityEditor
 
             public static extern AndroidAutoRotationBehavior autoRotationBehavior
             {
-               [NativeMethod("GetAndroidAutoRotationBehavior")]
-               get;
-               [NativeMethod("SetAndroidAutoRotationBehavior")]
-               set;
+                [NativeMethod("GetAndroidAutoRotationBehavior")]
+                get;
+                [NativeMethod("SetAndroidAutoRotationBehavior")]
+                set;
             }
 
             // Android bundle version code
-            public static extern int  bundleVersionCode
+            public static extern int bundleVersionCode
             {
                 [NativeMethod("GetAndroidBundleVersionCode")]
                 get;
@@ -680,6 +710,129 @@ namespace UnityEditor
             // Add enableOnBackInvokedCallback flag to AndroidManifest
             [NativeProperty("AndroidPredictiveBackSupport", TargetType.Function)]
             public static extern bool predictiveBackSupport { get; set; }
+
+            [Obsolete("GetAndroidVulkanDenyFilterListImpl is deprecated. Use the androidVulkanDeviceFilterListAsset instead.")]
+            internal static extern AndroidDeviceFilterData[] GetAndroidVulkanDenyFilterListImpl();
+
+            [Obsolete("SetAndroidVulkanDenyFilterListImpl is deprecated. Use the androidVulkanDeviceFilterListAsset instead.")]
+            internal static extern void SetAndroidVulkanDenyFilterListImpl(AndroidDeviceFilterData[] filterData);
+
+            [Obsolete("GetAndroidVulkanAllowFilterListImpl is deprecated. Use the androidVulkanDeviceFilterListAsset instead.")]
+            internal static extern AndroidDeviceFilterData[] GetAndroidVulkanAllowFilterListImpl();
+
+            [Obsolete("SetAndroidVulkanAllowFilterListImpl is deprecated. Use the androidVulkanDeviceFilterListAsset instead.")]
+            internal static extern void SetAndroidVulkanAllowFilterListImpl(AndroidDeviceFilterData[] filterData);
+
+            public static extern VulkanDeviceFilterLists androidVulkanDeviceFilterListAsset { get; set; }
+
+
+            [Obsolete("vendorNameString is obsolete. Use VulkanDeviceFilterLists api instead.")]
+            private static readonly string vendorNameString = "vendorName";
+
+            [Obsolete("deviceNameString is obsolete. Use VulkanDeviceFilterLists api instead.")]
+            private static readonly string deviceNameString = "deviceName";
+
+            [Obsolete("brandNameString is obsolete. Use VulkanDeviceFilterLists api instead.")]
+            private static readonly string brandNameString = "brandName";
+
+            [Obsolete("productNameString is obsolete. Use VulkanDeviceFilterLists api instead.")]
+            private static readonly string productNameString = "productName";
+
+            [Obsolete("vulkanApiVersionStringValue is obsolete. Use VulkanDeviceFilterLists api instead.")]
+            private static readonly string vulkanApiVersionStringValue = "vulkanApiVersionString";
+
+            [Obsolete("driverVersionStringValue is obsolete. Use VulkanDeviceFilterLists api instead.")]
+            private static readonly string driverVersionStringValue = "driverVersionString";
+
+            // Keep in sync with same error message in VulkanDeviceFilterLists.Bindings.cs
+            [Obsolete("versionErrorMessage is obsolete. Use VulkanDeviceFilterLists api instead.")]
+            private static readonly string versionErrorMessage = "Version information should be formatted as:" +
+                "\n1. 'MajorVersion.MinorVersion.PatchVersion' where MinorVersion and PatchVersion are optional and must only " +
+                "contain numbers, or \n2. Hex number beginning with '0x' (max 4-bytes)";
+
+            // Keep in sync with validVersionString in VulkanDeviceFilterLists.Bindings.cs
+            [Obsolete("validVersionString is obsolete. Use VulkanDeviceFilterLists api instead.")]
+            private static readonly Regex validVersionString = new Regex(@"(^[0-9]+(\.[0-9]+){0,2}$)|(^0(x|X)([A-Fa-f0-9]{1,8})$)", RegexOptions.Compiled);
+
+            [Obsolete("CheckVersion is obsolete. Use VulkanDeviceFilterLists api instead.")]
+            internal static void CheckVersion(string value, string filterName, string fieldName)
+            {
+                if (!validVersionString.IsMatch(value))
+                    throw new ArgumentException($"Invalid version string in {filterName} for {fieldName}=\"{value}\": {versionErrorMessage}");
+            }
+
+            [Obsolete("CheckRegex is obsolete. Use VulkanDeviceFilterLists api instead.")]
+            internal static void CheckRegex(string value, string filterName, string fieldName)
+            {
+                try
+                {
+                    // Try to create a regex from the input string to determine if it is a valid regex
+                    Regex regex = new Regex(value);
+                }
+                catch (ArgumentException e)
+                {
+                    throw new ArgumentException($"Invalid Regular Expression in {filterName} for {fieldName}=\"{value}\": {e.Message}");
+                }
+            }
+
+            [Obsolete("CheckAllFilterData is obsolete. Use VulkanDeviceFilterLists api instead.")]
+            internal static void CheckAllFilterData(AndroidDeviceFilterData[] filterDataList, string filterName)
+            {
+                // The check will throw an exception if there's an issue with the data.
+                // We need to check the data here, as an invalid regex on the native side, can crash the game.
+                foreach (var filterData in filterDataList)
+                {
+                    if (!String.IsNullOrEmpty(filterData.vendorName))
+                        CheckRegex(filterData.vendorName, filterName, vendorNameString);
+                    if (!String.IsNullOrEmpty(filterData.deviceName))
+                        CheckRegex(filterData.deviceName, filterName, deviceNameString);
+                    if (!String.IsNullOrEmpty(filterData.brandName))
+                        CheckRegex(filterData.brandName, filterName, brandNameString);
+                    if (!String.IsNullOrEmpty(filterData.productName))
+                        CheckRegex(filterData.productName, filterName, productNameString);
+
+                    if (!String.IsNullOrEmpty(filterData.vulkanApiVersionString))
+                        CheckVersion(filterData.vulkanApiVersionString, filterName, vulkanApiVersionStringValue);
+                    if (!String.IsNullOrEmpty(filterData.driverVersionString))
+                        CheckVersion(filterData.driverVersionString, filterName, driverVersionStringValue);
+                }
+            }
+
+            // Note: Deprecation will be immediate in Unity 7. But this field will exist in Unity 6.
+            [Obsolete("androidVulkanDenyFilterList is deprecated, and is replaced by androidVulkanDeviceFilterListAsset.")]
+            public static AndroidDeviceFilterData[] androidVulkanDenyFilterList
+            {
+                get
+                {
+                    return GetAndroidVulkanDenyFilterListImpl();
+                }
+                set
+                {
+                    if (value == null || value.Length == 0)
+                        return;
+
+                    CheckAllFilterData(value, "Vulkan Deny filter list");
+                    SetAndroidVulkanDenyFilterListImpl(value);
+                }
+            }
+
+            // Note: Deprecation will be immediate in Unity 7. But this field will exist in Unity 6.
+            [Obsolete("androidVulkanAllowFilterList is deprecated, and is replaced by androidVulkanDeviceFilterListAsset.")]
+            public static AndroidDeviceFilterData[] androidVulkanAllowFilterList
+            {
+                get
+                {
+                    return GetAndroidVulkanAllowFilterListImpl();
+                }
+                set
+                {
+                    if (value == null || value.Length == 0)
+                        return;
+
+                    CheckAllFilterData(value, "Vulkan Allow filter list");
+                    SetAndroidVulkanAllowFilterListImpl(value);
+                }
+            }
         }
     }
 }

@@ -103,6 +103,8 @@ namespace UnityEngine.UIElements
         {
             var hasValidBindings = m_CollectionView.HasValidDataAndBindings();
 
+            m_CollectionView.m_PreviousRefreshedCount = m_CollectionView.itemsSource?.Count ?? 0;
+
             for (var i = 0; i < m_ActiveItems.Count; i++)
             {
                 var index = firstVisibleIndex + i;
@@ -174,6 +176,8 @@ namespace UnityEngine.UIElements
                 recycledItem.SetDragGhost(true);
                 recycledItem.index = m_DraggedItem.index;
                 recycledItem.rootElement.style.display = DisplayStyle.Flex;
+
+                m_CollectionView.viewController.SetBindingContext(recycledItem, recycledItem.index);
                 return;
             }
 
@@ -249,7 +253,7 @@ namespace UnityEngine.UIElements
         }
 
         /// <summary>
-        /// Scedule a deferred scroll to the item at the index provided to <see cref="ShouldDeferScrollToItem(int)"/> if it was deferred.
+        /// Schedule a deferred scroll to the item at the index provided to <see cref="ShouldDeferScrollToItem(int)"/> if it was deferred.
         /// </summary>
         protected void ScheduleDeferredScrollToItem()
         {

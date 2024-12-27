@@ -26,11 +26,12 @@ namespace Unity.UI.Builder
             Header = 1 << 1,
             StyleSheet = 1 << 2,
             StyleSelector = 1 << 3,
-            ElementAttributes = 1 << 4,
-            ElementInheritedStyles = 1 << 5,
-            LocalStyles = 1 << 6,
-            VisualTreeAsset = 1 << 7,
-            MultiSelection = 1 << 8,
+            Variables = 1 << 4,
+            ElementAttributes = 1 << 5,
+            ElementInheritedStyles = 1 << 6,
+            LocalStyles = 1 << 7,
+            VisualTreeAsset = 1 << 8,
+            MultiSelection = 1 << 9,
         }
 
         // View Data
@@ -80,6 +81,8 @@ namespace Unity.UI.Builder
         // Header
         BuilderInspectorHeader m_HeaderSection;
         internal BuilderInspectorHeader headerSection => m_HeaderSection;
+        // used for testing
+        internal BuilderInspectorVariables variablesSection => m_VariablesSection;
 
         // Sections
         BuilderInspectorCanvas m_CanvasSection;
@@ -87,6 +90,7 @@ namespace Unity.UI.Builder
         BuilderInspectorInheritedStyles m_InheritedStyleSection;
         BuilderInspectorLocalStyles m_LocalStylesSection;
         BuilderInspectorStyleSheet m_StyleSheetSection;
+        BuilderInspectorVariables m_VariablesSection;
 
         // Selector Preview
         TwoPaneSplitView m_SplitView;
@@ -246,17 +250,9 @@ namespace Unity.UI.Builder
             template.CloneTree(this);
 
             m_TextGeneratorStyle = this.Q<BuilderStyleRow>(null, "unity-text-generator");
-            if (Unsupported.IsDeveloperMode())
-            {
-                UIToolkitProjectSettings.onEnableAdvancedTextChanged += ChangeTextGeneratorStyleVisibility;
-                m_TextGeneratorStyle.style.display = UIToolkitProjectSettings.enableAdvancedText ? DisplayStyle.Flex : DisplayStyle.None;
-            }
-            else
-            {
-                UIToolkitProjectSettings.onEnableAdvancedTextChanged -= ChangeTextGeneratorStyleVisibility;
-                m_TextGeneratorStyle.style.display = DisplayStyle.None;
-            }
 
+            UIToolkitProjectSettings.onEnableAdvancedTextChanged += ChangeTextGeneratorStyleVisibility;
+            m_TextGeneratorStyle.style.display = UIToolkitProjectSettings.enableAdvancedText ? DisplayStyle.Flex : DisplayStyle.None;
 
             // Get the scroll view.
             // HACK: ScrollView is not capable of remembering a scroll position for content that changes often.
@@ -314,6 +310,10 @@ namespace Unity.UI.Builder
             m_StyleSheetSection = new BuilderInspectorStyleSheet(this);
             m_Sections.Add(m_StyleSheetSection.root);
 
+            // Variables Section
+            m_VariablesSection = new BuilderInspectorVariables(this);
+            m_Sections.Add(m_VariablesSection.root);
+
             // Attributes Section
             m_AttributesSection = new BuilderInspectorAttributes(this);
             m_Sections.Add(m_AttributesSection.root);
@@ -356,9 +356,17 @@ namespace Unity.UI.Builder
 
             cachedBinding = null;
 
-            // Hide pre and pre-wrap buttons until icons are provided.
-            this.Q<Button>("pre").style.display = DisplayStyle.None;
-            this.Q<Button>("pre-wrap").style.display = DisplayStyle.None;
+            var scaleModeWarningPlaceHolder = this.Q<VisualElement>("scale-mode-warning");
+            var spacer = new VisualElement();
+            spacer.style.marginLeft = 20;
+            spacer.style.minWidth = 105;
+            scaleModeWarningPlaceHolder.style.flexDirection = FlexDirection.Row;
+            scaleModeWarningPlaceHolder.Add(spacer);
+            var helpBox = new UnityEngine.UIElements.HelpBox(
+                "Note: Scale Mode will override some background settings.",
+                HelpBoxMessageType.Warning);
+            helpBox.style.marginLeft = 0.0f;
+            scaleModeWarningPlaceHolder.Add(helpBox);
         }
 
         public void UnsetBoundFieldInlineValue(DropdownMenuAction menuAction)
@@ -576,6 +584,8 @@ namespace Unity.UI.Builder
                 EnableSection(m_HeaderSection.header);
             if (section.HasFlag(Section.StyleSheet))
                 EnableSection(m_StyleSheetSection.root);
+            if (section.HasFlag(Section.Variables))
+                EnableSection(m_VariablesSection.root);
             if (section.HasFlag(Section.ElementAttributes))
                 EnableSection(m_AttributesSection.root);
             if (section.HasFlag(Section.ElementInheritedStyles))
@@ -681,9 +691,9 @@ namespace Unity.UI.Builder
                 return;
             }
 
-            if (field is TextShadowStyleField)
+            if (field is TextShadowStyleField || field is BackgroundRepeatStyleField)
             {
-                // Special case for TextShadowStyleField.
+                // Special case for TextShadowStyleField and BackgroundRepeatStyleField
                 // We need to disabled the fields inside so the foldout is still functional
                 var foldout = field.Q<Foldout>();
                 foldout.contentContainer.SetEnabled(enabled);
@@ -747,7 +757,7 @@ namespace Unity.UI.Builder
                 // we need to refresh the enabled state of the property field and its child basefield.
                 // This only happens once, when the field is first created but not yet bound.
                 var propertyField = field.Q<PropertyField>();
-                if (field.focusable == false || propertyField.enabledSelf == false)
+                if (null != propertyField && (field.focusable == false || propertyField.enabledSelf == false ))
                 {
                     propertyField.SetEnabled(true);
                     SetFieldAndParentContainerEnabledState(field, propertyField, true);
@@ -1244,7 +1254,8 @@ namespace Unity.UI.Builder
                     EnableSections(
                         Section.Header |
                         Section.StyleSelector |
-                        Section.LocalStyles);
+                        Section.LocalStyles |
+                        Section.Variables);
                     break;
                 case BuilderSelectionType.ElementInTemplateInstance:
                 case BuilderSelectionType.ElementInControlInstance:
@@ -1287,7 +1298,7 @@ namespace Unity.UI.Builder
             }
             else
             {
-                m_AttributesSection.refreshScheduledItem = m_AttributesSection.fieldsContainer.schedule.Execute(() => m_AttributesSection.Refresh());
+                m_AttributesSection.refreshScheduledItem = m_AttributesSection.attributesContainer.schedule.Execute(() => m_AttributesSection.Refresh());
             }
 
             // Reset current style rule.
@@ -1299,6 +1310,8 @@ namespace Unity.UI.Builder
 
             // Create the fields for the overridable styles.
             m_LocalStylesSection.Refresh();
+
+            m_VariablesSection.Refresh();
 
             m_CanvasSection.Refresh();
 
@@ -1329,7 +1342,7 @@ namespace Unity.UI.Builder
                 }
                 else
                 {
-                    m_AttributesSection.refreshScheduledItem = m_AttributesSection.fieldsContainer.schedule.Execute(() => m_AttributesSection.Refresh());
+                    m_AttributesSection.refreshScheduledItem = m_AttributesSection.attributesContainer.schedule.Execute(() => m_AttributesSection.Refresh());
                 }
             }
         }
@@ -1535,7 +1548,7 @@ namespace Unity.UI.Builder
 
             VisualElement field;
             if (propName is "data-source" or "data-source-type" or "data-source-path")
-                field = m_HeaderSection.m_DataSourceAndPathView.fieldsContainer.Query().Where(IsFieldElement);
+                field = m_HeaderSection.m_DataSourceAndPathView.attributesContainer.Query().Where(IsFieldElement);
             else
                 field = attributeSection.root.Query().Where(IsFieldElement);
 

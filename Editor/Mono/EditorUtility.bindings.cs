@@ -11,6 +11,7 @@ using UnityEngine.Scripting;
 using System.Collections.Generic;
 using System.Linq;
 using static UnityEditor.EditorGUI;
+using UnityEditor.Inspector.GraphicsSettingsInspectors;
 
 namespace UnityEditor
 {
@@ -206,7 +207,11 @@ namespace UnityEditor
         [RequiredByNativeCode]
         internal static void DelayedForceRebuildInspectors()
         {
-            EditorApplication.CallDelayed(ForceRebuildInspectors);
+            EditorApplication.CallDelayed(() =>
+            {
+                ForceRebuildInspectors();
+                GraphicsSettingsInspectorUtility.ReloadGraphicsSettingsEditorIfNeeded();
+            });
         }
 
         [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
@@ -241,11 +246,27 @@ namespace UnityEditor
         [FreeFunction("GetApplication().GetActiveNativePlatformSupportModuleName")]
         internal static extern string GetActiveNativePlatformSupportModuleName();
 
-        public static extern bool audioMasterMute
+        internal static extern bool Internal_AudioMasterMute
         {
             [FreeFunction("GetAudioManager().GetMasterGroupMute")] get;
             [FreeFunction("GetAudioManager().SetMasterGroupMute")] set;
         }
+
+        public static bool audioMasterMute
+        {
+            get { return Internal_AudioMasterMute; }
+            set
+            {
+                if (value != Internal_AudioMasterMute)
+                {
+                    Internal_AudioMasterMute = value;
+                    onAudioMasterMuteWasUpdated?.Invoke(value);
+                }
+            }
+        }
+
+        internal delegate void AudioMasterMuteWasUpdated(bool value);
+        internal static event AudioMasterMuteWasUpdated onAudioMasterMuteWasUpdated;
 
         internal static extern void LaunchBugReporter();
 

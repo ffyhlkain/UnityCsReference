@@ -21,7 +21,7 @@ namespace UnityEngine
         public int volumeDepth { get; set; }
         public int mipCount { get; set; }
 
-        private GraphicsFormat _graphicsFormat;// { get; set; }
+        private GraphicsFormat _graphicsFormat;
 
         public GraphicsFormat graphicsFormat
         {
@@ -31,8 +31,6 @@ namespace UnityEngine
             {
                 _graphicsFormat = value;
                 SetOrClearRenderTextureCreationFlag(GraphicsFormatUtility.IsSRGBFormat(value), RenderTextureCreationFlags.SRGB);
-                //To avoid that the order of setting a property changes the end result, we need to update the depthbufferbits because the setter depends on the colorFormat.
-                depthBufferBits = depthBufferBits;
             }
         }
 
@@ -55,16 +53,10 @@ namespace UnityEngine
             }
             set
             {
-                if (value == RenderTextureFormat.Shadowmap)
-                {
-                    shadowSamplingMode = ShadowSamplingMode.CompareDepths;
-                    // 'shadowSamplingMode' must be set immediately as we otherwise are unable to track the fact
-                    // that a Shadowmap was requested. (+ see comment below regarding setting 'graphicsFormat' as well)
-                }
-                // Update 'graphicsFormat' last because it also updates 'depthBufferBits', which relies on the 'colorFormat',
-                // which itself relies on the 'shadowSamplingMode' to make the distinction between RTF.Depth/RTF.Shadowmap.
+                shadowSamplingMode = RenderTexture.GetShadowSamplingModeForFormat(value);
                 GraphicsFormat requestedFormat = GraphicsFormatUtility.GetGraphicsFormat(value, sRGB);
                 graphicsFormat = SystemInfo.GetCompatibleFormat(requestedFormat, GraphicsFormatUsage.Render);
+                depthStencilFormat = RenderTexture.GetDepthStencilFormatLegacy(depthBufferBits, shadowSamplingMode);
             }
         }
 
@@ -83,10 +75,12 @@ namespace UnityEngine
         {
             get { return GraphicsFormatUtility.GetDepthBits(depthStencilFormat); }
             //Ideally we deprecate the setter but keeping it for now because its a very commonly used api
-            //It is very bad practice to use the colorFormat property here because that makes the result depend on the order of setting the properties
+            //It is very bad practice to use the shadowSamplingMode property here because that makes the result depend on the order of setting the properties
             //However, it's the best what we can do to make sure this is functionally correct.
-            //We now need to set depthBufferBits after we set graphicsFormat, see that property.
-            set { depthStencilFormat = RenderTexture.GetDepthStencilFormatLegacy(value, colorFormat, true); }
+            //depthBufferBits and colorFormat are legacy APIs that can be used togther in any order to set a combination of the (modern) fields graphicsFormat, dephtStencilFormat and shadowSamplingMode.
+            //The use of these legacy APIs should not be combined with setting the modern fields directly, the order can change the results.
+            //There should be no "magic" when setting the modern fields, the desc will contain what the users sets, even if the combination is not valid (ie a depthStencilFormat with stencil and shadowSamplingMode CompareDepths).
+            set { depthStencilFormat = RenderTexture.GetDepthStencilFormatLegacy(value, shadowSamplingMode); }
         }
 
         public Rendering.TextureDimension dimension { get; set; }
@@ -224,6 +218,19 @@ namespace UnityEngine
         {
             get { return (_flags & RenderTextureCreationFlags.DynamicallyScalableExplicit) != 0; }
             set { SetOrClearRenderTextureCreationFlag(value, RenderTextureCreationFlags.DynamicallyScalableExplicit); }
+        }
+
+        /// <summary>
+        /// Set to true if the render texture is to be used as a shading rate image.
+        /// </summary>
+        /// <remarks>
+        /// Width and height are usually in pixels but if enableShadingRate is set to true, width and height are in tiles.
+        /// See also <a href="https://docs.unity3d.com/Manual/variable-rate-shading">Variable Rate Shading</a>.
+        /// </remarks>
+        public bool enableShadingRate
+        {
+            get { return (_flags & RenderTextureCreationFlags.ShadingRate) != 0; }
+            set { SetOrClearRenderTextureCreationFlag(value, RenderTextureCreationFlags.ShadingRate); }
         }
     }
 
@@ -770,7 +777,9 @@ namespace UnityEngine
             bool isValid = ValidateFormat(format);
             if (isValid)
             {
+#pragma warning disable CS0618 // TextureFormat.PVRTC_* members are obsolete
                 bool requireSquarePOT = (TextureFormat.PVRTC_RGB2 <= format && format <= TextureFormat.PVRTC_RGBA4);
+#pragma warning restore CS0618
                 if (requireSquarePOT && !(width == height && Mathf.IsPowerOfTwo(width)))
                     throw new UnityException(String.Format("'{0}' demands texture to be square and have power-of-two dimensions", format.ToString()));
             }
@@ -1225,7 +1234,9 @@ namespace UnityEngine
             bool isValid = ValidateFormat(format);
             if (isValid)
             {
+#pragma warning disable CS0618 // TextureFormat.PVRTC_* members are obsolete
                 bool requireSquarePOT = (TextureFormat.PVRTC_RGB2 <= format && format <= TextureFormat.PVRTC_RGBA4);
+#pragma warning restore CS0618
                 if (requireSquarePOT && !Mathf.IsPowerOfTwo(width))
                     throw new UnityException(String.Format("'{0}' demands texture to have power-of-two dimensions", format.ToString()));
             }
@@ -1622,7 +1633,9 @@ namespace UnityEngine
             bool isValid = ValidateFormat(format);
             if (isValid)
             {
+#pragma warning disable CS0618 // TextureFormat.PVRTC_* members are obsolete
                 bool requireSquarePOT = (TextureFormat.PVRTC_RGB2 <= format && format <= TextureFormat.PVRTC_RGBA4);
+#pragma warning restore CS0618
                 if (requireSquarePOT && !(width == height && Mathf.IsPowerOfTwo(width)))
                     throw new UnityException(String.Format("'{0}' demands texture to be square and have power-of-two dimensions", format.ToString()));
             }
@@ -1961,7 +1974,9 @@ namespace UnityEngine
             bool isValid = ValidateFormat(format);
             if (isValid)
             {
+#pragma warning disable CS0618 // TextureFormat.PVRTC_* members are obsolete
                 bool requireSquarePOT = (TextureFormat.PVRTC_RGB2 <= format && format <= TextureFormat.PVRTC_RGBA4);
+#pragma warning restore CS0618
                 if (requireSquarePOT && !(width == height && Mathf.IsPowerOfTwo(width)))
                     throw new UnityException(String.Format("'{0}' demands texture to be square and have power-of-two dimensions", format.ToString()));
             }

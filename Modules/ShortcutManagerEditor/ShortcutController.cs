@@ -143,7 +143,7 @@ namespace UnityEditor.ShortcutManagement
             instance.HandleKeyEvent(Event.current);
         }
 
-        static void BeforeEventProcessedHandler(EventType type, KeyCode keyCode)
+        static void BeforeEventProcessedHandler(EventType type, KeyCode keyCode, EventModifiers modifiers)
         {
             if (s_IgnoreWhenPlayModeFocused && EditorWindow.focusedWindow is GameView && Application.isPlaying) return;
             instance.ResetShortcutState(type, keyCode);

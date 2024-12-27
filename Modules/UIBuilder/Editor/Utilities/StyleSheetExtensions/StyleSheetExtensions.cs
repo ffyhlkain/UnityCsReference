@@ -9,6 +9,7 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
 using UnityEditor.UIElements;
+using UnityEngine.UIElements.StyleSheets;
 
 namespace Unity.UI.Builder
 {
@@ -173,13 +174,22 @@ namespace Unity.UI.Builder
         public static StyleComplexSelector AddSelector(
             this StyleSheet styleSheet, string complexSelectorStr, string undoMessage = null)
         {
+            if (!SelectorUtility.TryCreateSelector(complexSelectorStr, out var complexSelector, out var error))
+            {
+                Builder.ShowWarning(error);
+                return null;
+            }
+
+            return styleSheet.AddSelector(complexSelector, undoMessage);
+        }
+
+        public static StyleComplexSelector AddSelector(
+            this StyleSheet styleSheet, StyleComplexSelector complexSelector, string undoMessage = null)
+        {
             // Undo/Redo
             if (string.IsNullOrEmpty(undoMessage))
                 undoMessage = "New UI Style Selector";
             Undo.RegisterCompleteObjectUndo(styleSheet, undoMessage);
-
-            if (!SelectorUtility.TryCreateSelector(complexSelectorStr, out var complexSelector))
-                return null;
 
             // Add rule to StyleSheet.
             var rulesList = styleSheet.rules.ToList();
@@ -200,6 +210,7 @@ namespace Unity.UI.Builder
         {
             foreach (var property in fromRule.properties)
             {
+                toStyleSheet.RemoveProperty(toSelector.rule, property.name);
                 var newProperty = toStyleSheet.AddProperty(toSelector, property.name);
                 foreach (var value in property.values)
                 {
@@ -214,6 +225,7 @@ namespace Unity.UI.Builder
                         case StyleValueType.ResourcePath: toStyleSheet.AddValue(newProperty, fromStyleSheet.GetAsset(value)); break;
                         case StyleValueType.Variable: toStyleSheet.AddVariable(newProperty, fromStyleSheet.GetString(value)); break;
                         case StyleValueType.Keyword: toStyleSheet.AddValue(newProperty, fromStyleSheet.GetKeyword(value)); break;
+                        case StyleValueType.Function: toStyleSheet.AddVariable(newProperty, fromStyleSheet.GetString(value)); break;
                     }
                 }
             }
@@ -221,6 +233,87 @@ namespace Unity.UI.Builder
             {
                 fromStyleSheet.RemoveProperty(fromRule, property);
             }
+        }
+
+        public static void TransferPropertyToSelector(this StyleSheet toStyleSheet, StyleComplexSelector toSelector, StyleSheet fromStyleSheet, StyleRule fromRule, StyleProperty property)
+        {
+            // remove the property if it exists in the destination
+            toStyleSheet.RemoveProperty(toSelector.rule, property.name);
+            var newProperty = toStyleSheet.AddProperty(toSelector, property.name);
+            foreach (var value in property.values)
+            {
+                switch (value.valueType)
+                {
+                    case StyleValueType.Float: toStyleSheet.AddValue(newProperty, fromStyleSheet.GetFloat(value)); break;
+                    case StyleValueType.Dimension: toStyleSheet.AddValue(newProperty, fromStyleSheet.GetDimension(value)); break;
+                    case StyleValueType.Enum: toStyleSheet.AddValueAsEnum(newProperty, fromStyleSheet.GetEnum(value)); break;
+                    case StyleValueType.String: toStyleSheet.AddValue(newProperty, fromStyleSheet.GetString(value)); break;
+                    case StyleValueType.Color: toStyleSheet.AddValue(newProperty, fromStyleSheet.GetColor(value)); break;
+                    case StyleValueType.AssetReference: toStyleSheet.AddValue(newProperty, fromStyleSheet.GetAsset(value)); break;
+                    case StyleValueType.ResourcePath: toStyleSheet.AddValue(newProperty, fromStyleSheet.GetAsset(value)); break;
+                    case StyleValueType.Variable: toStyleSheet.AddVariable(newProperty, fromStyleSheet.GetString(value)); break;
+                    case StyleValueType.Keyword: toStyleSheet.AddValue(newProperty, fromStyleSheet.GetKeyword(value)); break;
+                }
+            }
+
+            fromStyleSheet.RemoveProperty(fromRule, property);
+        }
+
+        public static void AddVariable(this StyleSheet toStyleSheet, StyleComplexSelector toSelector, StyleValueType valueType, string variableName, string value)
+        {
+            var property = toStyleSheet.FindProperty(toSelector, variableName) ?? toStyleSheet.AddProperty(toSelector, variableName);
+
+            switch (valueType)
+            {
+                case StyleValueType.Float:
+                    toStyleSheet.AddValue(property, float.Parse(value));
+                    break;
+                case StyleValueType.Dimension:
+                    toStyleSheet.AddValue(property, new Dimension(float.Parse(value), Dimension.Unit.Pixel));
+                    break;
+                case StyleValueType.String:
+                    toStyleSheet.AddValue(property, value);
+                    break;
+                case StyleValueType.Variable:
+                    toStyleSheet.AddVariable(property, value);
+                    break;
+                case StyleValueType.Keyword:
+                    toStyleSheet.AddValue(property, (StyleValueKeyword)Enum.Parse(typeof(StyleValueKeyword), value));
+                    break;
+                case StyleValueType.Enum:
+                    toStyleSheet.AddValueAsEnum(property, value);
+                    break;
+            }
+
+            property.isCustomProperty = true;
+            toStyleSheet.UpdateContentHash();
+        }
+
+        // Add color variable.
+        public static void AddVariable(this StyleSheet toStyleSheet, StyleComplexSelector toSelector, string variableName, Color value)
+        {
+            var property = toStyleSheet.FindProperty(toSelector, variableName) ?? toStyleSheet.AddProperty(toSelector, variableName);
+            toStyleSheet.AddValue(property, value);
+            property.isCustomProperty = true;
+            toStyleSheet.UpdateContentHash();
+        }
+
+        // Add image variable.
+        public static void AddVariable(this StyleSheet toStyleSheet, StyleComplexSelector toSelector, string variableName, UnityEngine.Object value)
+        {
+            var property = toStyleSheet.FindProperty(toSelector, variableName) ?? toStyleSheet.AddProperty(toSelector, variableName);
+            toStyleSheet.AddValue(property, value);
+            property.isCustomProperty = true;
+            toStyleSheet.UpdateContentHash();
+        }
+
+        // Add dimension variable.
+        public static void AddVariable(this StyleSheet toStyleSheet, StyleComplexSelector toSelector, string variableName, Dimension value)
+        {
+            var property = toStyleSheet.FindProperty(toSelector, variableName) ?? toStyleSheet.AddProperty(toSelector, variableName);
+            toStyleSheet.AddValue(property, value);
+            property.isCustomProperty = true;
+            toStyleSheet.UpdateContentHash();
         }
 
         public static bool IsSelected(this StyleSheet styleSheet)
@@ -244,10 +337,15 @@ namespace Unity.UI.Builder
             foreach (var fromProperty in fromRule.properties)
             {
                 var toProperty = toStyleSheet.AddProperty(toRule, fromProperty.name);
+                toProperty.requireVariableResolve = fromProperty.requireVariableResolve;
+                toProperty.isCustomProperty = fromProperty.isCustomProperty;
                 for (int i = 0; i < fromProperty.values.Length; ++i)
                 {
                     var fromValueHandle = fromProperty.values[i];
                     var toValueIndex = toStyleSheet.SwallowStyleValue(fromStyleSheet, fromValueHandle);
+                    // have to use the same value index for function handles
+                    if (fromValueHandle.valueType == StyleValueType.Function)
+                        toValueIndex = fromValueHandle.valueIndex;
                     toStyleSheet.AddValueHandle(toProperty, toValueIndex, fromValueHandle.valueType);
                 }
             }

@@ -341,7 +341,8 @@ namespace Unity.UI.Builder
             if (BuilderSharedStyles.IsSelectorsContainerElement(element) ||
                 BuilderSharedStyles.IsDocumentElement(element) ||
                 !element.IsLinkedToAsset() ||
-                (!BuilderSharedStyles.IsSelectorElement(element) && !element.IsPartOfActiveVisualTreeAsset(m_PaneWindow.document) && !BuilderSharedStyles.IsStyleSheetElement(element)))
+                (!BuilderSharedStyles.IsSelectorElement(element) && !element.IsPartOfActiveVisualTreeAsset(m_PaneWindow.document) && !BuilderSharedStyles.IsStyleSheetElement(element)) ||
+                BuilderSharedStyles.IsStyleSheetElement(element) && !string.IsNullOrEmpty(element?.GetProperty(BuilderConstants.ExplorerItemLinkedUXMLFileName) as string))
                 return false;
 
             if (BuilderSharedStyles.IsSelectorElement(element))
@@ -350,8 +351,8 @@ namespace Unity.UI.Builder
                 Undo.RegisterCompleteObjectUndo(
                     styleSheet, BuilderConstants.DeleteSelectorUndoMessage);
 
-                var selectorStr = BuilderSharedStyles.GetSelectorString(element);
-                styleSheet.RemoveSelector(selectorStr);
+                var complexSelector = element.GetProperty(BuilderConstants.ElementLinkedStyleSelectorVEPropertyName) as StyleComplexSelector;
+                styleSheet.RemoveSelector(complexSelector);
 
                 // If we are deleting multiple items then its possible that a previous
                 // delete recreated the explorer panel and this element is no longer valid.
@@ -606,9 +607,9 @@ namespace Unity.UI.Builder
         public void CreateTargetedSelector(VisualElement ve)
         {
             // populates the new selector field with a selector that targets the current element
-            var newSelectorTextField = m_PaneWindow.rootVisualElement.Q<BuilderStyleSheets>().newSelectorField.textField;
-            newSelectorTextField.value = BuilderStyleUtilities.GenerateElementTargetedSelector(ve);
-            newSelectorTextField.Focus();
+            var newSelectorField = m_PaneWindow.rootVisualElement.Q<BuilderStyleSheets>().newSelectorField;
+            newSelectorField.value = BuilderStyleUtilities.GenerateElementTargetedSelector(ve);
+            newSelectorField.Focus();
         }
     }
 }

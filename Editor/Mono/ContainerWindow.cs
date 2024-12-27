@@ -68,6 +68,8 @@ namespace UnityEditor
             m_UnsavedEditorWindows = new List<EditorWindow>();
         }
 
+        private static Func<bool> MppmCloseCallback;
+
         internal void __internalAwake()
         {
             hideFlags = HideFlags.DontSave;
@@ -158,8 +160,8 @@ namespace UnityEditor
             }
         }
 
-        private static readonly Color lightSkinColor = new Color(0.541f, 0.541f, 0.541f, 1.0f);
-        private static readonly Color darkSkinColor = new Color(0.098f, 0.098f, 0.098f, 1.0f);
+        private static readonly Color lightSkinColor = new Color(0.941f, 0.941f, 0.941f, 1.0f);
+        private static readonly Color darkSkinColor = new Color(0.078f, 0.0784f, 0.0784f, 1.0f);
         static Color skinBackgroundColor => EditorGUIUtility.isProSkin ? darkSkinColor : lightSkinColor;
 
         // Show the editor window.
@@ -285,6 +287,9 @@ namespace UnityEditor
             {
                 return AskToClose(m_UnsavedEditorWindows);
             }
+            if (Application.isHumanControllingUs && IsMultiplayerClone())
+                return MultiplayerCloneClose();
+
 
             return true;
         }
@@ -318,6 +323,18 @@ namespace UnityEditor
             }
 
             return true;
+        }
+
+        private static bool MultiplayerCloneClose()
+        {
+            if (MppmCloseCallback != null)
+                return MppmCloseCallback.Invoke();
+            return true;
+        }
+
+        internal static void SetMppmCanCloseCallback(Func<bool> mppmCanCloseCallback )
+        {
+            MppmCloseCallback = mppmCanCloseCallback;
         }
 
         private static bool AskToClose(List<EditorWindow> allUnsaved)

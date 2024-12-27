@@ -237,6 +237,11 @@ namespace UnityEngine
             get { return GetFoveatedRenderingCaps(); }
         }
 
+        public static bool hasTiledGPU
+        {
+            get { return HasTiledGPU(); }
+        }
+
         public static bool hasHiddenSurfaceRemovalOnGPU
         {
             get { return HasHiddenSurfaceRemovalOnGPU(); }
@@ -409,6 +414,11 @@ namespace UnityEngine
         public static int supportsStencil
         {
             get { return 1; }
+        }
+
+        public static bool supportsVariableRateShading
+        {
+            get { return SupportsVariableRateShading(); }
         }
 
         // The enums are only marked as obsolete in the editor.
@@ -714,6 +724,11 @@ namespace UnityEngine
             get { return SupportsIndirectArgumentsBuffer(); }
         }
 
+        public static bool supportsDepthFetchInRenderPass
+        {
+            get { return SupportsDepthFetchInRenderPass(); }
+        }
+
         [Obsolete("Vertex program support is required in Unity 5.0+")]
         public static bool supportsVertexPrograms { get { return true; } }
 
@@ -803,6 +818,9 @@ namespace UnityEngine
 
         [FreeFunction("ScriptingGraphicsCaps::GetGraphicsMultiThreaded")]
         static extern bool GetGraphicsMultiThreaded();
+
+        [FreeFunction("ScriptingGraphicsCaps::HasTiledGPU")]
+        static extern bool HasTiledGPU();
 
         [FreeFunction("ScriptingGraphicsCaps::GetRenderingThreadingMode")]
         static extern Rendering.RenderingThreadingMode GetRenderingThreadingMode();
@@ -1056,5 +1074,11 @@ namespace UnityEngine
 
         [FreeFunction("ScriptingGraphicsCaps::SupportsIndirectArgumentsBuffer")]
         static extern bool SupportsIndirectArgumentsBuffer();
+
+        [FreeFunction("ScriptingGraphicsCaps::SupportsDepthFetchInRenderPass")]
+        static extern bool SupportsDepthFetchInRenderPass();
+
+        [FreeFunction("ScriptingGraphicsCaps::SupportsVariableRateShading")]
+        static extern bool SupportsVariableRateShading();
     }
 }

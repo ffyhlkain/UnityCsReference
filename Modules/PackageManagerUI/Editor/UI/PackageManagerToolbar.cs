@@ -219,8 +219,8 @@ namespace UnityEditor.PackageManager.UI.Internal
                 if (!inProgressSpinner.started)
                     return;
 
-                var rect = GUIUtility.GUIToScreenRect(spinnerButtonContainer.worldBound);
-                var dropdown = new InProgressDropdown(m_ResourceLoader, m_UpmClient, m_AssetStoreDownloadManager, m_PackageDatabase, m_PageManager) { position = rect };
+                var position = PackageManagerWindow.instance.CalculateDropdownPosition(spinnerButtonContainer);
+                var dropdown = new InProgressDropdown(m_ResourceLoader, m_UpmClient, m_AssetStoreDownloadManager, m_PackageDatabase, m_PageManager) { position = position };
                 DropdownContainer.ShowDropdown(dropdown);
             });
         }
@@ -294,11 +294,9 @@ namespace UnityEditor.PackageManager.UI.Internal
                         return;
                     }
 
-
-                    if (m_OperationDispatcher.isInstallOrUninstallInProgress)
+                    if (!m_OperationDispatcher.InstallFromPath(m_IOProxy.GetParentDirectory(path), out var tempPackageId))
                         return;
 
-                    m_OperationDispatcher.InstallFromPath(m_IOProxy.GetParentDirectory(path), out var tempPackageId);
                     PackageManagerWindowAnalytics.SendEvent("addFromDisk");
                     SelectPackageInProject(tempPackageId);
                 }
@@ -314,9 +312,10 @@ namespace UnityEditor.PackageManager.UI.Internal
             dropdownItem.action = () =>
             {
                 var path = m_Application.OpenFilePanelWithFilters(L10n.Tr("Select package on disk"), "", new[] { "Package tarball", "tgz, tar.gz" });
-                if (string.IsNullOrEmpty(path) || m_OperationDispatcher.isInstallOrUninstallInProgress)
+
+                if ((string.IsNullOrEmpty(path)) || !m_OperationDispatcher.InstallFromPath(path, out var tempPackageId))
                     return;
-                m_OperationDispatcher.InstallFromPath(path, out var tempPackageId);
+
                 PackageManagerWindowAnalytics.SendEvent("addFromTarball");
                 SelectPackageInProject(tempPackageId);
             };
@@ -334,17 +333,14 @@ namespace UnityEditor.PackageManager.UI.Internal
                     submitButtonText = L10n.Tr("Install"),
                     onInputSubmitted = url =>
                     {
-                        if (m_OperationDispatcher.isInstallOrUninstallInProgress)
+                        if (!m_OperationDispatcher.InstallFromUrl(url))
                             return;
-                        m_OperationDispatcher.InstallFromUrl(url);
+
                         PackageManagerWindowAnalytics.SendEvent("addFromGitUrl", url);
                         SelectPackageInProject(url);
                     },
                     windowSize = new Vector2(resolvedStyle.width, 50)
                 };
-                // If a background GUI painted before, the coordinates got could be different.
-                // Repaint the package manager to ensure the coordinates retrieved is from packmanager.
-                PackageManagerWindow.GetWindow<PackageManagerWindow>().RepaintImmediately();
                 addMenu.ShowInputDropdown(args);
             };
 
@@ -353,18 +349,8 @@ namespace UnityEditor.PackageManager.UI.Internal
             dropdownItem.userData = "AddByName";
             dropdownItem.action = () =>
             {
-                // If a background GUI painted before, the coordinates got could be different.
-                // Repaint the package manager to ensure the coordinates retrieved is from packmanager.
-                PackageManagerWindow.GetWindow<PackageManagerWindow>().RepaintImmediately();
-                // Same as above, the worldBound of the toolbar is used rather than the addMenu
-                var rect = GUIUtility.GUIToScreenRect(worldBound);
-
-                // GUIToScreenRect calculates screen space coordinates in relation to contextual menu
-                // which is the last active view. Since we know the exact offset of contextual menu in
-                // relation to package manager we can compensate this by subtracting contextual menu origin.
-                rect.y -= worldBound.yMax;
-
-                var dropdown = new AddPackageByNameDropdown(m_ResourceLoader, m_UpmClient, m_PackageDatabase, m_PageManager, PackageManagerWindow.instance) { position = rect };
+                var position = PackageManagerWindow.instance.CalculateDropdownPosition(addMenu);
+                var dropdown = new AddPackageByNameDropdown(m_ResourceLoader, m_UpmClient, m_PackageDatabase, m_PageManager, m_OperationDispatcher, PackageManagerWindow.instance) { position = position};
                 DropdownContainer.ShowDropdown(dropdown);
             };
         }

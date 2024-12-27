@@ -630,7 +630,7 @@ namespace UnityEditor
             if (!ModeService.HasCapability(ModeCapability.LayoutWindowMenu, true))
                 return;
 
-            int layoutMenuItemPriority = 20;
+            int layoutMenuItemPriority = -20;
 
             // Get user saved layouts
             string[] layoutPaths = new string[0];
@@ -861,6 +861,17 @@ namespace UnityEditor
             // Unmaximize if maximized
             if (maximized)
                 Unmaximize(maximized);
+
+            // When the playmode behaviour is set to Play Unfocused
+            if (entering)
+            {
+                var playmodeView = PlayModeView.GetCorrectPlayModeViewToFocus();
+                if (playmodeView != null && playmodeView.enterPlayModeBehavior == PlayModeView.EnterPlayModeBehavior.PlayUnfocused)
+                {
+                    playmodeView.m_Parent.OnLostFocus();
+                    return playmodeView;
+                }
+            }
 
             // Try finding and focusing appropriate window/tab
             window = TryFocusAppropriateWindow(entering);
@@ -1115,6 +1126,9 @@ namespace UnityEditor
         public static bool MaximizePrepare(EditorWindow win)
         {
             View rootSplit = FindRootSplitView(win);
+            //Some windows such as pop up windows might not have a split view
+            if (rootSplit == null)
+                return false;
             View itor = rootSplit.parent;
 
             // Make sure it has a dockarea
@@ -1639,6 +1653,9 @@ namespace UnityEditor
                 return;
             }
 
+            if (!ContainerWindow.CanCloseAll(false))
+                return;
+
             ResetFactorySettings();
         }
 
@@ -1703,11 +1720,11 @@ namespace UnityEditor
             }
             GUI.SetNextControlName("m_PreferencesName");
             EditorGUI.BeginChangeCheck();
-            m_LayoutName = EditorGUILayout.TextField(m_LayoutName);            
+            m_LayoutName = EditorGUILayout.TextField(m_LayoutName);
             if (EditorGUI.EndChangeCheck())
             {
                 if (m_LayoutName.Length > k_MaxLayoutNameLength)
-                {                    
+                {
                     m_LayoutName = m_LayoutName.Substring(0, k_MaxLayoutNameLength);
                 }
                 m_LayoutName = m_LayoutName.TrimEnd();
@@ -1816,7 +1833,6 @@ namespace UnityEditor
         }
 
         // Version Control is registered from native code (EditorWindowController.cpp), for license check
-        // [MenuItem ("Window/Version Control", false, 2010)]
         [RequiredByNativeCode]
         static void ShowVersionControl()
         {

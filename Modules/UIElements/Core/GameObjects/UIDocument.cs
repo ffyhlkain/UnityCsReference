@@ -100,9 +100,15 @@ namespace UnityEngine.UIElements
     }
 
     /// <summary>
-    /// Defines a Component that connects VisualElements to GameObjects. This makes it
-    /// possible to render UI defined in UXML documents in the Game view.
+    /// Defines a Component that connects <see cref="VisualElement">VisualElements</see> to <see cref="GameObject">GameObjects</see>.
     /// </summary>
+    /// <remarks>
+    /// This makes it possible to render UI defined in UXML documents in the Game view.
+    /// </remarks>
+    /// <example>
+    /// The following example shows how to query a UIDocument component and interact with its elements.
+    /// <code source="../../../../Modules/UIElements/Tests/UIElementsExamples/Assets/Examples/UIDocument_Example.cs"/>
+    /// </example>
     [HelpURL("UIE-get-started-with-runtime-ui")]
     [AddComponentMenu("UI Toolkit/UI Document"), ExecuteAlways, DisallowMultipleComponent]
     [DefaultExecutionOrder(-100)] // UIDocument's OnEnable should run before user's OnEnable
@@ -191,8 +197,13 @@ namespace UnityEngine.UIElements
         /// the parent GameObject's UIDocument component automatically.
         /// </summary>
         /// <remarks>
-        /// If a UIDocument has a parent, you cannot add it directly to a panel. Unity adds it to
+        /// If a UIDocument has a parent, you cannot add it directly to a panel (PanelSettings). Unity adds it to
         /// the parent's root visual element instead.
+        ///
+        /// The advantage of placing UIDocument GameObjects under other UIDocument GameObjects is that you can
+        /// have many UIDocuments all drawing in the same panel (rootVisualElement) and therefore able to batch
+        /// together. A typical example is rendering health bars on top of characters, which would be more expensive to
+        /// render in their separate panels (and batches) compared to combining them to a single panel, one batch.
         /// </remarks>
         public UIDocument parentUI
         {
@@ -268,6 +279,13 @@ namespace UnityEngine.UIElements
         /// The order in which this UIDocument will show up on the hierarchy in relation to other UIDocuments either
         /// attached to the same PanelSettings, or with the same UIDocument parent.
         /// </summary>
+        /// <remarks>
+        /// A UIDocument with a higher sorting order is displayed above one with a lower sorting order. In the case of identical sorting order,
+        /// an older UIDocument is drawn first, appearing behind new ones.
+        ///\\
+        ///\\
+        /// SA: [[PanelSettings.sortingOrder]]
+        /// </remarks>
         public float sortingOrder
         {
             get => m_SortingOrder;
@@ -334,13 +352,16 @@ namespace UnityEngine.UIElements
                 AddRootVisualElementToTree();
             }
 
+            if (TryGetComponent<UIRenderer>(out var renderer))
+                renderer.enabled = true;
+
             ResolveRuntimePanel();
         }
 
         void ResolveRuntimePanel()
         {
             if (m_RuntimePanel == null)
-                m_RuntimePanel = rootVisualElement.panel as RuntimePanel;
+                m_RuntimePanel = rootVisualElement?.panel as RuntimePanel;
         }
 
         /// <summary>
@@ -394,19 +415,20 @@ namespace UnityEngine.UIElements
 
             Debug.Assert(rtp.drawsInCameras);
 
-            float ppu = m_RuntimePanel == null ? 1.0f : m_RuntimePanel.pixelsPerUnit;
-            if (ppu < UIRUtility.k_Epsilon)
-                ppu = Panel.k_DefaultPixelsPerUnit;
+            var localBounds = rootVisualElement.localBounds3D;
+            VisualElement.TransformAlignedBounds(ref rootVisualElement.worldTransformRef, ref localBounds);
 
-            float ppuScale = 1.0f / ppu;
-
-            // TODO: Compute actual aabb by accounting for 3D transforms.
-            var rect = rootVisualElement.boundingBox;
-            var center = rect.center;
-            center.y = -center.y;
-            renderer.localBounds = new Bounds(center * ppuScale, new Vector3(rect.width * ppuScale, rect.height * ppuScale, 0.0f));
+            renderer.localBounds = SanitizeRendererBounds(localBounds);
 
             UpdateCutRenderChainFlag();
+        }
+
+        Bounds SanitizeRendererBounds(Bounds b)
+        {
+            // The bounds may be invalid if the element is not layed out yet
+            if (float.IsNaN(b.size.x) || float.IsNaN(b.size.y) || float.IsNaN(b.size.z))
+                return new Bounds(Vector3.zero, Vector3.zero);
+            return b;
         }
 
         void AddOrRemoveRendererComponent()
@@ -483,16 +505,16 @@ namespace UnityEngine.UIElements
             }
             else
             {
-                var ui2World = Matrix4x4.TRS(Vector3.zero, flipRotation, scale);
-                var world2UI = ui2World.inverse;
+                var ui2Go = Matrix4x4.TRS(Vector3.zero, flipRotation, scale);
+                var go2Ui = ui2Go.inverse;
 
                 var childGoToWorld = transform.localToWorldMatrix;
                 var worldToParentGo = parentUI.transform.worldToLocalMatrix;
 
-                // (GOa - To - World) * (UI2W) * (VEb - Space - To - VEa - Space) = (GOb - To - World) * (UI2W)
-                // (VEb - Space - To - VEa - Space) = (UI2W) ^ -1 * (GOa - To - World) ^ -1 * (GOb - To - World) * (UI2W)
-
-                matrix = world2UI * worldToParentGo * childGoToWorld * ui2World;
+                //      (VEa To World)      * (VEb To VEa) =                                           (VEb To World)
+                // (GOa To World) * (UI2GO) * (VEb To VEa) =                                      (GOb To World) * (UI2GO)
+                //                            (VEb To VEa) = (UI2GO) ^ -1 * (GOa To World) ^ -1 * (GOb To World) * (UI2GO)
+                matrix = go2Ui * worldToParentGo * childGoToWorld * ui2Go;
             }
         }
 
@@ -693,7 +715,7 @@ namespace UnityEngine.UIElements
             }
             else
             {
-                m_RootVisualElement.style.position = Position.Relative;
+                m_RootVisualElement.style.position = Position.Absolute;
                 m_RootVisualElement.style.width = StyleKeyword.Null;
                 m_RootVisualElement.style.height = StyleKeyword.Null;
             }
@@ -737,6 +759,9 @@ namespace UnityEngine.UIElements
                     m_PanelSettings.panel.liveReloadSystem.UnregisterVisualTreeAssetTracker(m_RootVisualElement);
                 m_RootVisualElement = null;
             }
+
+            if (TryGetComponent<UIRenderer>(out var renderer))
+                renderer.enabled = false;
         }
 
         private void OnTransformChildrenChanged()

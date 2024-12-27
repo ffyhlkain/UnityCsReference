@@ -4,13 +4,13 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 using Unity.Properties;
 using UnityEngine.Internal;
 using UnityEngine.UIElements.Layout;
 using UnityEngine.UIElements.StyleSheets;
 using UnityEngine.UIElements.UIR;
-using System.Runtime.CompilerServices;
 using UnityEngine.Bindings;
 
 namespace UnityEngine.UIElements
@@ -66,9 +66,15 @@ namespace UnityEngine.UIElements
         StyleInitialized = 1 << 13,
         // Element is not rendered, but we keep the generated geometry in case it is shown later
         DisableRendering = 1 << 14,
+        // Element uses 3-D transforms or contains children that do
+        Needs3DBounds = 1 << 15,
+        // Element's 3-D transform local bounds need to be recalculated
+        LocalBounds3DDirty = 1 << 16,
+        // The DataSource tracking of the element should not ne processed when the element has not been configured properly
+        DetachedDataSource = 1 << 17,
 
         // Element initial flags
-        Init = WorldTransformDirty | WorldTransformInverseDirty | WorldClipDirty | BoundingBoxDirty | WorldBoundingBoxDirty | EventInterestParentCategoriesDirty
+        Init = WorldTransformDirty | WorldTransformInverseDirty | WorldClipDirty | BoundingBoxDirty | WorldBoundingBoxDirty | EventInterestParentCategoriesDirty | LocalBounds3DDirty | DetachedDataSource
     }
 
     /// <summary>
@@ -186,7 +192,11 @@ namespace UnityEngine.UIElements
     /// </summary>
     /// <remarks>
     /// VisualElement contains several features that are common to all controls in UIElements, such as layout, styling and event handling.
-    /// Several other classes derive from it to implement custom rendering and define behaviour for controls.
+    /// Several other classes derive from it to implement custom rendering and define behaviour for controls.\\
+    ///\\
+    /// To inherit from VisualElement and create a custom control, refer to [[wiki:UIB-structuring-ui-custom-elements|Creating a custom control]].\\
+    ///\\
+    /// SA: [[wiki:UIE-uxml-element-VisualElement|UXML element VisualElement]], [[VisualElementExtensions]], [[UQueryExtensions]].
     /// </remarks>
     public partial class VisualElement : Focusable, ITransform
     {
@@ -196,7 +206,32 @@ namespace UnityEngine.UIElements
         [Serializable]
         public class UxmlSerializedData : UIElements.UxmlSerializedData
         {
-            #pragma warning disable 649
+            /// <summary>
+            /// This is used by the code generator when a custom control is using the <see cref="UxmlElementAttribute"/>. You should not need to call it.
+            /// </summary>
+            [Conditional("UNITY_EDITOR")]
+            public new static void Register()
+            {
+                UxmlDescriptionCache.RegisterType(typeof(UxmlSerializedData), new UxmlAttributeNames[]
+                    {
+                        new(nameof(name), "name"),
+                        new(nameof(enabledSelf), "enabled"),
+                        new(nameof(viewDataKey), "view-data-key"),
+                        new(nameof(pickingMode), "picking-mode", null, "pickingMode"),
+                        new(nameof(tooltip), "tooltip"),
+                        new(nameof(usageHints), "usage-hints"),
+                        new(nameof(tabIndex), "tabindex"),
+                        new(nameof(focusable), "focusable"),
+                        new(nameof(languageDirection), "language-direction"),
+                        new(nameof(dataSourceUnityObject), "data-source"),
+                        new(nameof(dataSourcePathString), "data-source-path"),
+                        new(nameof(dataSourceTypeString), "data-source-type", typeof(object)),
+                        new(nameof(bindings), "Bindings"),
+                    }
+                );
+            }
+
+#pragma warning disable 649
             [SerializeField, HideInInspector] string name;
             [SerializeField, UxmlIgnore, HideInInspector] UxmlAttributeFlags name_UxmlAttributeFlags;
             [UxmlAttribute("enabled")]
@@ -220,8 +255,8 @@ namespace UnityEngine.UIElements
             [SerializeField, UxmlIgnore, HideInInspector] UxmlAttributeFlags languageDirection_UxmlAttributeFlags;
 
             [Tooltip(DataBinding.k_DataSourceTooltip)]
-            [SerializeField, HideInInspector, DataSourceDrawer] Object dataSource;
-            [SerializeField, UxmlIgnore, HideInInspector] UxmlAttributeFlags dataSource_UxmlAttributeFlags;
+            [SerializeField, HideInInspector, DataSourceDrawer, UxmlAttribute("data-source")] Object dataSourceUnityObject;
+            [SerializeField, UxmlIgnore, HideInInspector] UxmlAttributeFlags dataSourceUnityObject_UxmlAttributeFlags;
 
             // We use a string here because the PropertyPath struct is not serializable
             [UxmlAttribute("data-source-path")]
@@ -277,8 +312,8 @@ namespace UnityEngine.UIElements
                     e.tabIndex = tabIndex;
                 if (ShouldWriteAttributeValue(focusable_UxmlAttributeFlags))
                     e.focusable = focusable;
-                if (ShouldWriteAttributeValue(dataSource_UxmlAttributeFlags))
-                    e.dataSource = dataSource ? dataSource : null;
+                if (ShouldWriteAttributeValue(dataSourceUnityObject_UxmlAttributeFlags))
+                    e.dataSourceUnityObject = dataSourceUnityObject ? dataSourceUnityObject : null;
                 if (ShouldWriteAttributeValue(dataSourcePathString_UxmlAttributeFlags))
                     e.dataSourcePathString = dataSourcePathString;
                 if (ShouldWriteAttributeValue(dataSourceTypeString_UxmlAttributeFlags))
@@ -637,11 +672,12 @@ namespace UnityEngine.UIElements
         internal UIRenderer uiRenderer; // Null for non-world panels
 
         /// <summary>
-        /// Returns a transform object for this VisualElement.
+        /// Returns a transform styles object for this VisualElement.
         /// <seealso cref="ITransform"/>
         /// </summary>
         /// <remarks>
-        /// The transform object implements changes to the VisualElement object.
+        /// The transform styles object contains the position, rotation, scale style properties of this VisualElement.
+        /// __Note__: This transform object is different and separate from the GameObject Transform MonoBehaviour.
         /// </remarks>
         public ITransform transform
         {
@@ -735,7 +771,7 @@ namespace UnityEngine.UIElements
         // This will replace the Rect position
         // origin and size relative to parent
         /// <summary>
-        /// The position and size of the VisualElement relative to its parent, as computed by the layout system.
+        /// The position and size of the VisualElement relative to its parent, as computed by the layout system. (RO)
         /// </summary>
         /// <remarks>
         /// Before reading from this property, add it to a panel and wait for one frame to ensure that the element layout is computed.
@@ -813,7 +849,7 @@ namespace UnityEngine.UIElements
         }
 
         /// <summary>
-        /// The rectangle of the content area of the element, in the local space of the element.
+        /// The rectangle of the content area of the element, in the local space of the element. (RO)
         /// </summary>
         /// <remarks>
         /// In the box model used by UI Toolkit, the content area refers to the inner rectangle for displaying text and images.
@@ -851,6 +887,18 @@ namespace UnityEngine.UIElements
 
                 return rect - spacing;
             }
+        }
+
+        internal bool needs3DBounds
+        {
+            get => (m_Flags & VisualElementFlags.Needs3DBounds) != 0;
+            set => m_Flags = value ? m_Flags | VisualElementFlags.Needs3DBounds : m_Flags & ~VisualElementFlags.Needs3DBounds;
+        }
+
+        internal bool isLocalBounds3DDirty
+        {
+            get => (m_Flags & VisualElementFlags.LocalBounds3DDirty) != 0;
+            set => m_Flags = value ? m_Flags | VisualElementFlags.LocalBounds3DDirty : m_Flags & ~VisualElementFlags.LocalBounds3DDirty;
         }
 
         internal bool isBoundingBoxDirty
@@ -945,6 +993,65 @@ namespace UnityEngine.UIElements
         {
             m_WorldBoundingBox = boundingBox;
             TransformAlignedRect(ref worldTransformRef, ref m_WorldBoundingBox);
+        }
+
+        internal Bounds localBounds3D
+        {
+            get
+            {
+                if (isLocalBounds3DDirty)
+                {
+                    UpdateLocalBoundsAndPickingBounds3D();
+                    isLocalBounds3DDirty = false;
+                }
+
+                return WorldSpaceDataStore.GetWorldSpaceData(this).localBounds3D;
+            }
+        }
+
+        void UpdateLocalBoundsAndPickingBounds3D()
+        {
+            if (!areAncestorsAndSelfDisplayed)
+            {
+                WorldSpaceDataStore.SetWorldSpaceData(this, new WorldSpaceData
+                {
+                    localBounds3D = WorldSpaceData.k_Empty3DBounds
+                });
+                return;
+            }
+
+            if (!needs3DBounds)
+            {
+                // Fast path for elements that don't need 3D transforms
+                var bbox = boundingBox;
+                var localBounds = new Bounds(bbox.center, bbox.size);
+                WorldSpaceDataStore.SetWorldSpaceData(this, new WorldSpaceData
+                {
+                    localBounds3D = localBounds
+                });
+                return;
+            }
+
+            var bounds = new Bounds(rect.center, rect.size);
+
+            if (!ShouldClip())
+            {
+                var childCount = hierarchy.childCount;
+                for (int i = 0; i < childCount; i++)
+                {
+                    var childBounds = hierarchy[i].localBounds3D;
+                    if (childBounds.extents.x >= 0)
+                    {
+                        hierarchy[i].TransformAlignedBoundsToParentSpace(ref childBounds);
+                        bounds.Encapsulate(childBounds);
+                    }
+                }
+            }
+
+            WorldSpaceDataStore.SetWorldSpaceData(this, new WorldSpaceData
+            {
+                localBounds3D = bounds
+            });
         }
 
         /// <summary>
@@ -1341,7 +1448,7 @@ namespace UnityEngine.UIElements
         private PickingMode m_PickingMode;
 
         /// <summary>
-        /// Determines if this element can be pick during mouseEvents or <see cref="IPanel.Pick"/> queries.
+        /// Determines if this element can be picked during mouseEvents or <see cref="IPanel.Pick"/> queries.
         /// </summary>
         [CreateProperty]
         public PickingMode pickingMode
@@ -1591,12 +1698,14 @@ namespace UnityEngine.UIElements
 
                     VisualElementFlags flagToAdd = p != null ? VisualElementFlags.NeedsAttachToPanelEvent : 0;
 
+                    InvokeHierarchyChanged(HierarchyChangeType.DetachedFromPanel, elements);
                     foreach (var e in elements)
                     {
                         e.elementPanel = p;
                         e.m_Flags |= flagToAdd;
                         e.m_CachedNextParentWithEventInterests = null;
                     }
+                    InvokeHierarchyChanged(HierarchyChangeType.AttachedToPanel, elements);
 
                     foreach (var e in elements)
                     {
@@ -1618,7 +1727,14 @@ namespace UnityEngine.UIElements
                 // Better to do some things here before we call the user's callback as some state may be modified during the callback.
                 UnregisterRunningAnimations();
                 CreateBindingRequests();
-                TrackSource(dataSource, null);
+                DetachDataSource();
+
+                if (containedPointerIds != 0)
+                {
+                    //We need to remove this element from the ElementsUnderPointer
+                    elementPanel.RemoveElementFromPointerCache(this);
+                    elementPanel.CommitElementUnderPointers();
+                }
 
                 // Only send this event if the element isn't waiting for an attach event already
                 if ((m_Flags & VisualElementFlags.NeedsAttachToPanelEvent) == 0)
@@ -1647,7 +1763,7 @@ namespace UnityEngine.UIElements
 
                 RegisterRunningAnimations();
                 ProcessBindingRequests();
-                TrackSource(null, dataSource);
+                AttachDataSource();
 
                 // We need to reset any visual pseudo state
                 pseudoStates &= ~(PseudoStates.Focus | PseudoStates.Active | PseudoStates.Hover);
@@ -1687,10 +1803,14 @@ namespace UnityEngine.UIElements
         /// <summary>
         /// Sends an event to the event handler.
         /// </summary>
-        /// <param name="e">The event to send.</param>
         /// <remarks>
-        /// This forwards the event to the event dispatcher.
+        /// The event is forwarded to the event dispatcher for processing.
+        /// For more information, refer to [[wiki:UIE-Events-Synthesizing|Synthesize and send events]].
         /// </remarks>
+        /// <remarks>
+        /// SA: [[IEventHandler.HandleEvent]], [[EventDispatcher]], [[EventBase]]
+        /// </remarks>
+        /// <param name="e">The event to send.</param>
         public sealed override void SendEvent(EventBase e)
         {
             elementPanel?.SendEvent(e);
@@ -1712,7 +1832,7 @@ namespace UnityEngine.UIElements
             elementPanel?.OnVersionChanged(this, changeType);
         }
 
-        internal void InvokeHierarchyChanged(HierarchyChangeType changeType) { elementPanel?.InvokeHierarchyChanged(this, changeType); }
+        internal void InvokeHierarchyChanged(HierarchyChangeType changeType, IReadOnlyList<VisualElement> additionalContext = null) { elementPanel?.InvokeHierarchyChanged(this, changeType, additionalContext); }
 
         [Obsolete("SetEnabledFromHierarchy is deprecated and will be removed in a future release. Please use SetEnabled instead.")]
         protected internal bool SetEnabledFromHierarchy(bool state)
@@ -1782,7 +1902,6 @@ namespace UnityEngine.UIElements
             get { return hierarchy.parent == null || hierarchy.parent.enabledInHierarchy; }
         }
 
-        //Returns true if 'this' can be enabled relative to the enabled state of its panel
         /// <summary>
         /// Returns true if the <see cref="VisualElement"/> is enabled in its own hierarchy.
         /// </summary>
@@ -1796,12 +1915,11 @@ namespace UnityEngine.UIElements
         }
 
         private bool m_EnabledSelf;
-        //Returns the local enabled state
         /// <summary>
         /// Returns true if the <see cref="VisualElement"/> is enabled locally.
         /// </summary>
         /// <remarks>
-        /// This flag isn't changed if the VisualElement is disabled implicitly by one of its parents. To verify this, use enabledInHierarchy.
+        /// This flag isn't changed if the VisualElement is disabled implicitly by one of its parents. To verify this, use <see cref="enabledInHierarchy"/>.
         /// </remarks>
         [CreateProperty]
         public bool enabledSelf
@@ -1819,12 +1937,15 @@ namespace UnityEngine.UIElements
         }
 
         /// <summary>
-        /// Changes the <see cref="VisualElement"/> enabled state. A disabled VisualElement does not receive most events.
+        /// Changes the <see cref="VisualElement"/> enabled state. A disabled visual element does not receive most events.
         /// </summary>
         /// <param name="value">New enabled state</param>
         /// <remarks>
         /// The method disables the local flag of the VisualElement and implicitly disables its children.
         /// It does not affect the local enabled flag of each child.
+        ///\\
+        /// A disabled visual element does not receive most input events, such as mouse and keyboard events. However, it can still respond to Attach or Detach events, and geometry change events.
+        /// <seealso cref="enabledSelf"/>
         /// </remarks>
         public void SetEnabled(bool value)
         {
@@ -1898,9 +2019,9 @@ namespace UnityEngine.UIElements
         /// The value of this property reflects the value of <see cref="IResolvedStyle.visibility"/> for this element.
         /// The value is true for <see cref="Visibility.Visible"/> and false for <see cref="Visibility.Hidden"/>.
         /// Writing to this property writes to <see cref="IStyle.visibility"/>.
+        /// </remarks>
         /// <seealso cref="resolvedStyle"/>
         /// <seealso cref="style"/>
-        /// </remarks>
         [CreateProperty]
         public bool visible
         {
@@ -1921,23 +2042,36 @@ namespace UnityEngine.UIElements
         }
 
         /// <summary>
-        /// Triggers a repaint of the <see cref="VisualElement"/> on the next frame.
-        /// This method is called internally when a change occurs that requires a repaint, such as when UIElements.BaseField_1::ref::value is changed or the text in a <see cref="Label"/>.
-        /// If you are implementing a custom control, you can call this method to trigger a repaint when a change occurs that requires a repaint such as when using
-        /// ::ref::generateVisualContent to render a mesh and the mesh data has now changed.
+        /// Marks that the <see cref="VisualElement"/> requires a repaint.
         /// </summary>
+        /// <remarks>
+        /// Don't call this method when you change the styles or properties of built-in controls, as this is automatically called when necessary.
+        /// However, you might need to call this method when your element has a custom ::ref::generateVisualContent that needs to be triggered, such as after you change a custom style or property.
+        /// </remarks>
         public void MarkDirtyRepaint()
         {
             IncrementVersion(VersionChangeType.Repaint);
         }
 
         /// <summary>
-        /// Called when the <see cref="VisualElement"/> visual contents need to be (re)generated.
+        /// Delegate function to generate the visual content of a visual element.
         /// </summary>
         /// <remarks>
-        /// <para>When this delegate is handled, you can generate custom geometry in the content region of the <see cref="VisualElement"/>. For an example, see the <see cref="MeshGenerationContext"/> documentation.</para>
-        /// <para>This delegate is called only when the <see cref="VisualElement"/> needs to regenerate its visual contents. It is not called every frame when the panel refreshes. The generated content is cached, and remains intact until any of the <see cref="VisualElement"/>'s properties that affects visuals either changes, or <see cref="VisualElement.MarkDirtyRepaint"/> is called.</para>
-        /// <para>When you execute code in a handler to this delegate, do not make changes to any property of the <see cref="VisualElement"/>. A handler should treat the <see cref="VisualElement"/> as 'read-only'. Changing the <see cref="VisualElement"/> during this event might cause undesirable side effects. For example, the changes might lag, or be missed completely.</para>
+        /// Use this delegate to generate custom geometry in the content region of the <see cref="VisualElement"/>.
+        /// You can use the <see cref="MeshGenerationContext.painter2D"/> object to generate visual content,
+        /// or use the <see cref="MeshGenerationContext.Allocate"/> method to manually allocate a mesh and then fill in the vertices and indices.
+        ///\\
+        ///\\
+        /// This delegate is called during the initial creation of the <see cref="VisualElement"/> and whenever a repaint is needed.
+        /// This delegate isn't called on every frame refresh. To force a repaint, call <see cref="VisualElement.MarkDirtyRepaint"/>.
+        ///\\
+        ///\\
+        /// __Note__: When you execute code in a handler to this delegate, don't update any property of the <see cref="VisualElement"/>, as this can
+        /// alter the generated content and cause unwanted side effects, such as lagging or missed updates. To avoid this, treat the <see cref="VisualElement"/>
+        /// as read-only within the delegate.
+        /// </remarks>
+        /// <remarks>
+        /// SA: [[MeshGenerationContext]]
         /// </remarks>
         public Action<MeshGenerationContext> generateVisualContent { get; set; }
 
@@ -2452,6 +2586,12 @@ namespace UnityEngine.UIElements
             return m_PropertyBag?.ContainsKey(key) == true;
         }
 
+        internal bool ClearProperty(PropertyName key)
+        {
+            CheckUserKeyArgument(key);
+            return m_PropertyBag?.Remove(key) ?? false;
+        }
+
         static void CheckUserKeyArgument(PropertyName key)
         {
             if (PropertyName.IsNullOrEmpty(key))
@@ -2519,7 +2659,6 @@ namespace UnityEngine.UIElements
                 if (m_SubRenderTargetMode == value)
                     return;
 
-                Debug.Assert(Application.isEditor, "subRenderTargetMode is not supported on runtime yet"); //See UIRREnderEvents. blitMaterial_LinearToGamma initialisation line 900
                 m_SubRenderTargetMode = value;
                 IncrementVersion(VersionChangeType.Repaint);
             }
@@ -2623,6 +2762,7 @@ namespace UnityEngine.UIElements
         /// <summary>
         /// Add a manipulator associated to a VisualElement.
         /// </summary>
+        /// <remarks>For more information, refer to [[wiki:UIE-manipulators|Manipulators]] in the User Manual.</remarks>
         /// <param name="ele">VisualElement associated to the manipulator.</param>
         /// <param name="manipulator">Manipulator to be added to the VisualElement.</param>
         public static void AddManipulator(this VisualElement ele, IManipulator manipulator)
@@ -2636,6 +2776,7 @@ namespace UnityEngine.UIElements
         /// <summary>
         /// Remove a manipulator associated to a VisualElement.
         /// </summary>
+        /// <remarks>For more information, refer to [[wiki:UIE-manipulators|Manipulators]] in the User Manual.</remarks>
         /// <param name="ele">VisualElement associated to the manipulator.</param>
         /// <param name="manipulator">Manipulator to be removed from the VisualElement.</param>
         public static void RemoveManipulator(this VisualElement ele, IManipulator manipulator)

@@ -51,7 +51,7 @@ namespace UnityEngine.UIElements
         /// </summary>
         BackgroundRepeat backgroundRepeat { get; }
         /// <summary>
-        /// Background image size value.
+        /// Background image size value. Transitions are fully supported only when using size in pixels or percentages, such as pixel-to-pixel or percentage-to-percentage transitions.
         /// </summary>
         BackgroundSize backgroundSize { get; }
         /// <summary>
@@ -274,6 +274,10 @@ namespace UnityEngine.UIElements
         /// Tinting color for the element's backgroundImage.
         /// </summary>
         Color unityBackgroundImageTintColor { get; }
+        /// <summary>
+        /// TextElement editor rendering mode.
+        /// </summary>
+        EditorTextRenderingMode unityEditorTextRenderingMode { get; }
         /// <summary>
         /// Font to draw the element's text, defined as a Font object.
         /// </summary>

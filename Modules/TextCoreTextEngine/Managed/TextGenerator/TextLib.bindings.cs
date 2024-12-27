@@ -3,6 +3,7 @@
 // https://unity3d.com/legal/licenses/Unity_Reference_Only_License
 
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using UnityEngine.Bindings;
 using UnityEngine.Scripting;
@@ -11,120 +12,90 @@ namespace UnityEngine.TextCore.Text
 {
     [StructLayout(LayoutKind.Sequential)]
     [NativeHeader("Modules/TextCoreTextEngine/Native/TextLib.h")]
-    [VisibleToOtherModules("UnityEngine.UIElementsModule","Unity.UIElements.PlayModeTests")]
+    [VisibleToOtherModules("UnityEngine.UIElementsModule", "Unity.UIElements.PlayModeTests")]
     internal class TextLib
     {
         private readonly IntPtr m_Ptr;
 
-        [VisibleToOtherModules("UnityEngine.UIElementsModule")]
-        internal TextLib()
+        public TextLib(byte[] icuData)
         {
-            m_Ptr = GetInstance();
+            m_Ptr = GetInstance(icuData);
         }
 
-        private static extern IntPtr GetInstance();
+        private static extern IntPtr GetInstance(byte[] icuData);
 
-        [VisibleToOtherModules("UnityEngine.UIElementsModule")]
-        internal NativeTextInfo GenerateText(NativeTextGenerationSettings settings)
+        public NativeTextInfo GenerateText(NativeTextGenerationSettings settings, IntPtr textGenerationInfo)
         {
-            var textInfo = GenerateTextInternal(settings);
-            var textElementInfos = textInfo.textElementInfos;
-            textInfo.fontAssets = new FontAsset[textInfo.fontAssetIds.Length];
+            Debug.Assert((settings.fontStyle & FontStyles.Bold) == 0);// Bold need to be set by the fontWeight only.
+            var textInfo = GenerateTextInternal(settings, textGenerationInfo);
 
-            int previousLastGlyphIndex = 0;
-            for (int i = 0; i < textInfo.fontAssetIds.Length; i++)
+            foreach (ref var meshInfo in textInfo.meshInfos.AsSpan())
             {
-                var fa = FontAsset.GetFontAssetByID(textInfo.fontAssetIds[i]);
-                textInfo.fontAssets[i] = fa;
+                var fa = FontAsset.GetFontAssetByID(meshInfo.fontAssetId);
+                meshInfo.fontAsset = fa;
 
-                for (int j = previousLastGlyphIndex; j < textInfo.fontAssetLastGlyphIndex[i]; j++)
+                // TODO we should add glyphs in batch instead
+                foreach (ref var textElementInfo in meshInfo.textElementInfos.AsSpan())
                 {
-                    var glyphID = textElementInfos[j].glyphID;
+                    var glyphID = textElementInfo.glyphID;
 
                     bool success = fa.TryAddGlyphInternal((uint)glyphID, out var glyph);
                     if (!success)
                         continue;
 
                     var glyphRect = glyph.glyphRect;
+                    var padding = settings.vertexPadding / 64.0f;
 
-                    Vector2 uv0;
-                    uv0.x = (float)glyphRect.x / fa.atlasWidth;
-                    uv0.y = (float)glyphRect.y / fa.atlasHeight;
-                    Vector2 uv1;
-                    uv1.x = uv0.x;
-                    uv1.y = (float)(glyphRect.y + glyphRect.height) / fa.atlasHeight;
-                    Vector2 uv2;
-                    uv2.x = (float)(glyphRect.x + glyphRect.width) / fa.atlasWidth;
-                    uv2.y = uv1.y;
-                    Vector2 uv3;
-                    uv3.x = uv2.x;
-                    uv3.y = uv0.y;
+                    Vector2 bottomLeftUV; // Bottom Left
+                    bottomLeftUV.x = (float)(glyphRect.x - padding) / fa.atlasWidth;
+                    bottomLeftUV.y = (float)(glyphRect.y - padding) / fa.atlasHeight;
 
-                    textElementInfos[j].bottomLeft.uv0 = uv0;
-                    textElementInfos[j].topLeft.uv0 = uv1;
-                    textElementInfos[j].topRight.uv0 = uv2;
-                    textElementInfos[j].bottomRight.uv0 = uv3;
+                    Vector2 topLeftUV; // Top Left
+                    topLeftUV.x = bottomLeftUV.x;
+                    topLeftUV.y = (float)(glyphRect.y + glyphRect.height + padding) / fa.atlasHeight;
+
+                    Vector2 topRightUV; // Top Right
+                    topRightUV.x = (float)(glyphRect.x + glyphRect.width + padding) / fa.atlasWidth;
+                    topRightUV.y = topLeftUV.y;
+
+                    Vector2 bottomRightUV; // Bottom Right
+                    bottomRightUV.x = topRightUV.x;
+                    bottomRightUV.y = bottomLeftUV.y;
+
+                    // The native code is not yet aware of the atlas, and glyphs for the underline+strikethrough have their UV manually eddited to
+                    // be stretched without side effect. We need to combine the position in the atlas with the expected position in the source glyph.
+                    textElementInfo.bottomLeft.uv0 = topRightUV * textElementInfo.bottomLeft.uv0 + bottomLeftUV * (new Vector2(1, 1) - textElementInfo.bottomLeft.uv0);
+                    textElementInfo.topLeft.uv0 = topRightUV * textElementInfo.topLeft.uv0 + bottomLeftUV * (new Vector2(1, 1) - textElementInfo.topLeft.uv0); ;
+                    textElementInfo.topRight.uv0 = topRightUV * textElementInfo.topRight.uv0 + bottomLeftUV * (new Vector2(1, 1) - textElementInfo.topRight.uv0); ;
+                    textElementInfo.bottomRight.uv0 = topRightUV * textElementInfo.bottomRight.uv0 + bottomLeftUV * (new Vector2(1, 1) - textElementInfo.bottomRight.uv0); ;
                 }
-                previousLastGlyphIndex = textInfo.fontAssetLastGlyphIndex[i];
             }
-
             return textInfo;
         }
 
-        [NativeMethod(Name = "TextLib::GenerateText")]
-        private extern NativeTextInfo GenerateTextInternal(NativeTextGenerationSettings settings);
+        [NativeMethod(Name = "TextLib::GenerateTextMesh")]
+        private extern NativeTextInfo GenerateTextInternal(NativeTextGenerationSettings settings, IntPtr textGenerationInfo);
+
+        [NativeMethod(Name = "TextLib::MeasureText")]
+        public extern Vector2 MeasureText(NativeTextGenerationSettings settings, IntPtr textGenerationInfo);
+
+        [NativeMethod(Name = "TextLib::FindIntersectingLink")]
+        static public extern int FindIntersectingLink(Vector2 point, IntPtr textGenerationInfo);
 
         internal static class BindingsMarshaller
         {
             public static IntPtr ConvertToNative(TextLib textLib) => textLib.m_Ptr;
         }
 
-        static byte[] s_ICUData = null;
-        internal static Func<UnityEngine.TextAsset> GetICUAssetEditorDelegate;
-        private static UnityEngine.TextAsset GetICUAsset()
-        {
+        public static Func<UnityEngine.TextAsset> GetICUAssetEditorDelegate;
+    }
 
-            if (GetICUAssetEditorDelegate != null)
-            {
-                //Editor will load the ICU library before the scene, so we need to check in the asset database as the asset may not be loaded yet.
-                var asset = GetICUAssetEditorDelegate();
-                if (asset != null)
-                    return asset;
-            }
-            else
-            {
-                Debug.LogError("GetICUAssetEditorDelegate is null");
-            }
-            // Dont know about the panelSettings class existence here so we must filter by name
-            foreach( var t in Resources.FindObjectsOfTypeAll<UnityEngine.TextAsset>())
-            {
-                if (t.name == "icudt73l")
-                    return t;
-            }
+    [VisibleToOtherModules("UnityEngine.UIElementsModule")]
+    internal static class TextGenerationInfo
+    {
+        public static extern IntPtr Create();
 
-            return null;
-        }
-
-        [RequiredByNativeCode]
-        internal static int LoadAndCountICUdata()
-        {
-            s_ICUData = GetICUAsset()?.bytes;
-            return s_ICUData?.Length ?? 0;
-        }
-
-        [VisibleToOtherModules("Unity.UIElements.PlayModeTests")]
-        [RequiredByNativeCode]
-        internal static bool GetICUdata(Span<byte> data,  int maxSize)
-        {
-            if (s_ICUData == null)
-                LoadAndCountICUdata();
-
-            Debug.Assert(s_ICUData != null, "s_ICUData not initialized");
-            Debug.Assert(maxSize == s_ICUData.Length);
-
-            s_ICUData.CopyTo(data);
-            s_ICUData = null;
-            return true;
-        }
+        [FreeFunction("TextGenerationInfo::Destroy",IsThreadSafe = true)]
+        public static extern void Destroy(IntPtr ptr);
     }
 }

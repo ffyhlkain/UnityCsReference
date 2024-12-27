@@ -240,13 +240,6 @@ namespace UnityEditor
                 [StaticAccessor("GetPlayerSettings().GetEditorOnlyForUpdate()", StaticAccessorType.Dot)] set;
             }
 
-            [NativeProperty("webGLEnableWebGPU", TargetType.Field)]
-            public extern static bool enableWebGPU
-            {
-                [StaticAccessor("GetPlayerSettings().GetEditorOnly()", StaticAccessorType.Dot)] get;
-                [StaticAccessor("GetPlayerSettings().GetEditorOnlyForUpdate()", StaticAccessorType.Dot)] set;
-            }
-
             [NativeProperty("webGLPowerPreference", TargetType.Field)]
             public extern static WebGLPowerPreference powerPreference
             {
@@ -280,6 +273,15 @@ namespace UnityEditor
             {
                 [StaticAccessor("GetPlayerSettings().GetEditorOnly()", StaticAccessorType.Dot)] get;
                 [StaticAccessor("GetPlayerSettings().GetEditorOnlyForUpdate()", StaticAccessorType.Dot)] set;
+            }
+
+            [NativeProperty("webEnableSubmoduleStrippingCompatibility", TargetType.Field)]
+            public extern static bool enableSubmoduleStrippingCompatibility
+            {
+                [StaticAccessor("GetPlayerSettings().GetEditorOnly()", StaticAccessorType.Dot)]
+                get;
+                [StaticAccessor("GetPlayerSettings().GetEditorOnlyForUpdate()", StaticAccessorType.Dot)]
+                set;
             }
         }
     }

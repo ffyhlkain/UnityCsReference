@@ -26,6 +26,11 @@ namespace UnityEngine.UIElements
         public const float k_MaskPosZ = 1.0f; // The correct z value to push/pop a mask
         public const int k_MaxMaskDepth = 7; // Requires 3 bits in the stencil
 
+        // Keep in sync with UIRVertexUtility.h
+        public const byte k_DynamicColorDisabled = 0;
+        public const byte k_DynamicColorEnabled = 1;
+        public const byte k_DynamicColorEnabledText = 2;
+
         [MethodImpl(MethodImplOptionsEx.AggressiveInlining)]
         public static bool ShapeWindingIsClockwise(int maskDepth, int stencilRef)
         {
@@ -88,7 +93,7 @@ namespace UnityEngine.UIElements
             k_ComputeTransformMatrixMarker.Begin();
 
             ve.GetPivotedMatrixWithLayout(out result);
-            VisualElement currentAncestor = ve.parent;
+            VisualElement currentAncestor = ve.hierarchy.parent;
             if ((currentAncestor == null) || (ancestor == currentAncestor))
             {
                 k_ComputeTransformMatrixMarker.End();
@@ -107,7 +112,7 @@ namespace UnityEngine.UIElements
                 else
                     VisualElement.MultiplyMatrix34(ref ancestorMatrix, ref temp, out result);
 
-                currentAncestor = currentAncestor.parent;
+                currentAncestor = currentAncestor.hierarchy.parent;
 
                 destIsTemp = !destIsTemp;
             } while ((currentAncestor != null) && (ancestor != currentAncestor));

@@ -59,13 +59,25 @@ sealed class AudioContainerWindowState
 
     internal string TargetPath { get; private set; }
 
+    internal void UpdateTargetPath()
+    {
+        if (m_AudioContainer != null)
+        {
+            TargetPath = AssetDatabase.GetAssetPath(m_AudioContainer);
+        }
+        else
+        {
+            TargetPath = null;
+        }
+    }
+
     internal void Reset()
     {
         Stop();
         m_AudioContainer = null;
         m_SerializedObject = null;
         m_IsPlayingOrPausedLocalFlag = false;
-        TargetPath = null;
+        UpdateTargetPath();
     }
 
     internal VisualElement GetResourceTrackerElement()
@@ -164,7 +176,7 @@ sealed class AudioContainerWindowState
 
         if (m_AudioContainer != null)
         {
-            TargetPath = AssetDatabase.GetAssetPath(m_AudioContainer);
+            UpdateTargetPath();
         }
 
         if (targetChanged)
@@ -174,17 +186,7 @@ sealed class AudioContainerWindowState
 
         if (trackedSourceChanged)
         {
-            if (m_ResourceTrackerElement != null)
-            {
-                m_ResourceTrackerElement.Unbind();
-            }
-
-            if (m_TrackedSource != null)
-            {
-                var trackedSourceSO = new SerializedObject(m_TrackedSource);
-                var trackedSourceResourceProperty = trackedSourceSO.FindProperty("m_Resource");
-                m_ResourceTrackerElement.TrackPropertyValue(trackedSourceResourceProperty, OnResourceChanged);
-            }
+            UpdateResourceTrackerElement();
         }
     }
 
@@ -199,9 +201,28 @@ sealed class AudioContainerWindowState
         m_AudioContainer = container;
 
         if (m_AudioContainer != null)
-            TargetPath = AssetDatabase.GetAssetPath(m_AudioContainer);
+        {
+            UpdateTargetPath();
+        }
 
         TargetChanged?.Invoke(this, EventArgs.Empty);
+
+        UpdateResourceTrackerElement();
+    }
+
+    void UpdateResourceTrackerElement()
+    {
+        if (m_ResourceTrackerElement != null)
+        {
+            m_ResourceTrackerElement.Unbind();
+        }
+
+        if (m_TrackedSource != null)
+        {
+            var trackedSourceSO = new SerializedObject(m_TrackedSource);
+            var trackedSourceResourceProperty = trackedSourceSO.FindProperty("m_Resource");
+            m_ResourceTrackerElement.TrackPropertyValue(trackedSourceResourceProperty, OnResourceChanged);
+        }
     }
 
     internal void Play()
@@ -320,6 +341,11 @@ sealed class AudioContainerWindowState
 
     void OnEditorPauseStateChanged(PauseState state)
     {
+        if (m_AudioContainer == null || m_IsSuspended)
+        {
+            return;
+        }
+
         EditorPauseStateChanged?.Invoke(this, EventArgs.Empty);
     }
 

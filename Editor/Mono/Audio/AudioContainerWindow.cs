@@ -20,6 +20,15 @@ namespace UnityEditor;
 
 sealed class AudioContainerWindow : EditorWindow
 {
+    enum Icons
+    {
+        Play = 0,
+        Stop = 1,
+        Skip = 2,
+        DiceOff = 3,
+        DiceOn = 4
+    }
+
     /// <summary>
     /// The cached instance of the window, if it is open.
     /// </summary>
@@ -32,8 +41,8 @@ sealed class AudioContainerWindow : EditorWindow
     /// Only used locally in these methods, but it's a global member to avoid GC.
     /// </summary>
     readonly List<AudioContainerElement> m_AddedElements = new();
-
     readonly string k_EmptyGuidString = Guid.Empty.ToString("N");
+    readonly Texture2D[] k_IconTextureCache = new Texture2D[Enum.GetNames(typeof(Icons)).Length];
 
     VisualElement m_ContainerRootVisualElement;
     VisualElement m_Day0RootVisualElement;
@@ -91,15 +100,11 @@ sealed class AudioContainerWindow : EditorWindow
     Label m_AutomaticTriggerModeLabel;
     Label m_LoopLabel;
 
-    // Shared icon references
-    Texture2D m_DiceIconOff;
-    Texture2D m_DiceIconOn;
-
     bool m_IsVisible;
-    bool m_IsSubscribedToGUICallbacksAndEvents;
     bool m_IsInitializing;
     bool m_Day0ElementsInitialized;
     bool m_ContainerElementsInitialized;
+    bool m_IsSubscribedToGUICallbacksAndEvents;
     bool m_ClipFieldProgressBarsAreCleared = true;
 
     /// <summary>
@@ -114,6 +119,11 @@ sealed class AudioContainerWindow : EditorWindow
         window.Show();
     }
 
+    internal bool IsInitializedForTargetDisplay()
+    {
+        return m_ContainerElementsInitialized && m_IsSubscribedToGUICallbacksAndEvents;
+    }
+
     static void OnCreateButtonClicked()
     {
         ProjectWindowUtil.CreateAudioRandomContainer();
@@ -121,15 +131,16 @@ sealed class AudioContainerWindow : EditorWindow
 
     void OnEnable()
     {
-        Instance = this;
-        m_DiceIconOff = EditorGUIUtility.IconContent("AudioRandomContainer On Icon").image as Texture2D;
-        m_DiceIconOn = EditorGUIUtility.IconContent("AudioRandomContainer Icon").image as Texture2D;
+        if (Instance == null)
+        {
+            Instance = this;
+        }
+
         SetTitle();
     }
 
     void OnDisable()
     {
-        Instance = null;
         State.OnDestroy();
         UnsubscribeFromGUICallbacksAndEvents();
         m_IsInitializing = false;
@@ -137,6 +148,19 @@ sealed class AudioContainerWindow : EditorWindow
         m_ContainerElementsInitialized = false;
         m_CachedElements.Clear();
         m_AddedElements.Clear();
+
+        if (Instance == this)
+        {
+            Instance = null;
+        }
+    }
+
+    void OnFocus()
+    {
+        if (State.AudioContainer != null)
+        {
+            UpdateTransportButtonStates();
+        }
     }
 
     private void OnFocus()
@@ -178,7 +202,7 @@ sealed class AudioContainerWindow : EditorWindow
 
         titleContent = new GUIContent(titleString)
         {
-            image = m_DiceIconOff
+            image = GetIconTexture(Icons.DiceOff)
         };
     }
 
@@ -290,6 +314,7 @@ sealed class AudioContainerWindow : EditorWindow
         SubscribeToClipListCallbacksAndEvents();
         SubscribeToAutomaticTriggerCallbacksAndEvents();
         SubscribeToTooltipCallbacksAndEvents();
+        SubscribeToAudioMasterMuteCallbacksAndEvents();
         m_IsSubscribedToGUICallbacksAndEvents = true;
     }
 
@@ -306,6 +331,7 @@ sealed class AudioContainerWindow : EditorWindow
         UnsubscribeFromClipListCallbacksAndEvents();
         UnsubscribeFromAutomaticTriggerCallbacksAndEvents();
         UnsubscribeFromTooltipCallbacksAndEvents();
+        UnsubscribeFromAudioMasterMuteCallbacksAndEvents();
         m_IsSubscribedToGUICallbacksAndEvents = false;
     }
 
@@ -330,8 +356,6 @@ sealed class AudioContainerWindow : EditorWindow
             m_CachedElements.Clear();
         else
             m_CachedElements = State.AudioContainer.elements.ToList();
-
-        m_AddedElements.Clear();
     }
 
     void OnSerializedObjectChanged(SerializedObject obj)
@@ -368,9 +392,7 @@ sealed class AudioContainerWindow : EditorWindow
         m_PlayStopButtonImage = UIToolkitUtilities.GetChildByName<VisualElement>(m_ContainerRootVisualElement, "play-button-image");
         m_SkipButton = UIToolkitUtilities.GetChildByName<Button>(m_ContainerRootVisualElement, "skip-button");
         m_SkipButtonImage = UIToolkitUtilities.GetChildByName<VisualElement>(m_ContainerRootVisualElement, "skip-button-image");
-
-        var skipIcon = UIToolkitUtilities.LoadIcon("Skip");
-        m_SkipButtonImage.style.backgroundImage = new StyleBackground(skipIcon);
+        m_SkipButtonImage.style.backgroundImage = GetIconTexture(Icons.Skip);
     }
 
     void SubscribeToPreviewCallbacksAndEvents()
@@ -417,15 +439,29 @@ sealed class AudioContainerWindow : EditorWindow
     {
         var editorIsPaused = EditorApplication.isPaused;
 
-        m_PlayStopButton?.SetEnabled(State.IsReadyToPlay() && !editorIsPaused);
-        m_SkipButton?.SetEnabled(State.IsPlayingOrPaused() && State.AudioContainer.triggerMode == AudioRandomContainerTriggerMode.Automatic && !editorIsPaused);
+        m_PlayStopButton?.SetEnabled(State.IsReadyToPlay() && !editorIsPaused && !EditorUtility.audioMasterMute);
+        m_SkipButton?.SetEnabled(State.IsPlayingOrPaused() && State.AudioContainer.triggerMode == AudioRandomContainerTriggerMode.Automatic && !editorIsPaused && !EditorUtility.audioMasterMute);
+        m_PlayStopButtonImage.style.backgroundImage = State.IsPlayingOrPaused() ? GetIconTexture(Icons.Stop) : GetIconTexture(Icons.Play);
+    }
 
-        var image =
-            State.IsPlayingOrPaused()
-                ? UIToolkitUtilities.LoadIcon("Stop")
-                : UIToolkitUtilities.LoadIcon("Play");
+    Texture2D GetIconTexture(Icons icon)
+    {
+        var cacheIndex = (int)icon;
 
-        m_PlayStopButtonImage.style.backgroundImage = new StyleBackground(image);
+        var name = icon switch
+        {
+            Icons.Play or Icons.Stop or Icons.Skip => icon.ToString(),
+            Icons.DiceOff => "AudioRandomContainer On Icon",
+            Icons.DiceOn => "AudioRandomContainer Icon",
+            _ => throw new ArgumentOutOfRangeException(nameof(icon), icon, null)
+        };
+
+        if (k_IconTextureCache[cacheIndex] == null)
+        {
+            k_IconTextureCache[cacheIndex] = EditorGUIUtility.IconContent(name).image as Texture2D;
+        }
+
+        return k_IconTextureCache[cacheIndex];
     }
 
     void OnTransportStateChanged(object sender, EventArgs e)
@@ -525,14 +561,14 @@ sealed class AudioContainerWindow : EditorWindow
     {
         if (property.boolValue)
         {
-            m_VolumeRandomizationButtonImage.style.backgroundImage = new StyleBackground(m_DiceIconOn);
+            m_VolumeRandomizationButtonImage.style.backgroundImage = GetIconTexture(Icons.DiceOn);
             m_VolumeRandomizationRangeSlider.SetEnabled(true);
             m_VolumeRandomizationRangeField.SetEnabled(true);
             m_VolumeRandomRangeTracker.SetEnabled(true);
         }
         else
         {
-            m_VolumeRandomizationButtonImage.style.backgroundImage = new StyleBackground(m_DiceIconOff);
+            m_VolumeRandomizationButtonImage.style.backgroundImage = GetIconTexture(Icons.DiceOff);
             m_VolumeRandomizationRangeSlider.SetEnabled(false);
             m_VolumeRandomizationRangeField.SetEnabled(false);
             m_VolumeRandomRangeTracker.SetEnabled(false);
@@ -632,14 +668,14 @@ sealed class AudioContainerWindow : EditorWindow
     {
         if (property.boolValue)
         {
-            m_PitchRandomizationButtonImage.style.backgroundImage = new StyleBackground(m_DiceIconOn);
+            m_PitchRandomizationButtonImage.style.backgroundImage = GetIconTexture(Icons.DiceOn);
             m_PitchRandomizationRangeSlider.SetEnabled(true);
             m_PitchRandomizationRangeField.SetEnabled(true);
             m_PitchRandomRangeTracker.SetEnabled(true);
         }
         else
         {
-            m_PitchRandomizationButtonImage.style.backgroundImage = new StyleBackground(m_DiceIconOff);
+            m_PitchRandomizationButtonImage.style.backgroundImage = GetIconTexture(Icons.DiceOff);
             m_PitchRandomizationRangeSlider.SetEnabled(false);
             m_PitchRandomizationRangeField.SetEnabled(false);
             m_PitchRandomRangeTracker.SetEnabled(false);
@@ -806,7 +842,17 @@ sealed class AudioContainerWindow : EditorWindow
     void OnListItemsAdded(IEnumerable<int> indices)
     {
         var indicesArray = indices as int[] ?? indices.ToArray();
+        const string undoName = $"Add {nameof(AudioRandomContainer)} element";
+        var groupUndoName = undoName;
+
+        if (indicesArray.Length > 1)
+        {
+            groupUndoName = $"{undoName}s";
+        }
+
+        Undo.SetCurrentGroupName(groupUndoName);
         var elements = State.AudioContainer.elements.ToList();
+        m_AddedElements.Clear();
 
         foreach (var index in indicesArray)
         {
@@ -822,22 +868,10 @@ sealed class AudioContainerWindow : EditorWindow
 
         State.AudioContainer.elements = elements.ToArray();
 
-        // Object creation undo recording needs to be done in a separate pass from the object property changes above
         foreach (var element in m_AddedElements)
-            Undo.RegisterCreatedObjectUndo(element, "Create AudioContainerElement");
-
-        m_AddedElements.Clear();
-
-        var undoName = $"Add {nameof(AudioRandomContainer)} element";
-
-        if (indicesArray.Length > 1)
         {
-            undoName = $"{undoName}s";
+            Undo.RegisterCreatedObjectUndo(element, undoName);
         }
-
-        Undo.SetCurrentGroupName(undoName);
-
-        m_AddedElements.Clear();
     }
 
     void OnListItemsRemoved(IEnumerable<int> indices)
@@ -851,12 +885,9 @@ sealed class AudioContainerWindow : EditorWindow
         {
             if (m_CachedElements[index] != null)
             {
-                AssetDatabase.RemoveObjectFromAsset(m_CachedElements[index]);
                 Undo.DestroyObjectImmediate(m_CachedElements[index]);
             }
         }
-
-        State.AudioContainer.NotifyObservers(AudioRandomContainer.ChangeEventType.List);
 
         var undoName = $"Remove {nameof(AudioRandomContainer)} element";
 
@@ -866,6 +897,7 @@ sealed class AudioContainerWindow : EditorWindow
         }
 
         Undo.SetCurrentGroupName(undoName);
+        State.AudioContainer.NotifyObservers(AudioRandomContainer.ChangeEventType.List);
     }
 
     void OnItemListIndexChanged(int oldIndex, int newIndex)
@@ -876,14 +908,18 @@ sealed class AudioContainerWindow : EditorWindow
 
     void OnAudioClipDrag(List<AudioClip> audioClips)
     {
-        var undoName = $"Add {nameof(AudioRandomContainer)} element";
+        const string undoName = $"Add {nameof(AudioRandomContainer)} element";
+        var groupUndoName = undoName;
 
         if (audioClips.Count > 1)
-            undoName = $"{undoName}s";
+        {
+            groupUndoName = $"{undoName}s";
+        }
 
-        Undo.RegisterCompleteObjectUndo(State.AudioContainer, undoName);
-
+        Undo.RegisterCompleteObjectUndo(State.AudioContainer, groupUndoName);
+        Undo.SetCurrentGroupName(groupUndoName);
         var elements = State.AudioContainer.elements.ToList();
+        m_AddedElements.Clear();
 
         foreach (var audioClip in audioClips)
         {
@@ -900,12 +936,10 @@ sealed class AudioContainerWindow : EditorWindow
 
         State.AudioContainer.elements = elements.ToArray();
 
-        // Object creation undo recording needs to be done in a separate pass from the object property changes above
         foreach (var element in m_AddedElements)
-            Undo.RegisterCreatedObjectUndo(element, "Create AudioContainerElement");
-
-        m_AddedElements.Clear();
-        Undo.SetCurrentGroupName(undoName);
+        {
+            Undo.RegisterCreatedObjectUndo(element, undoName);
+        }
     }
 
     void OnAudioClipListChanged(SerializedProperty property)
@@ -918,6 +952,12 @@ sealed class AudioContainerWindow : EditorWindow
 
             foreach (var elm in elements)
             {
+                // If the element is null, OnBindListItem will handle it, log an error and grey out the list entry.
+                if (elm == null)
+                {
+                    continue;
+                }
+
                 AssetDatabase.TryGetGUIDAndLocalFileIdentifier(elm, out var guid, out var localId);
 
                 // An empty asset GUID means the subasset has lost the reference
@@ -932,6 +972,11 @@ sealed class AudioContainerWindow : EditorWindow
 
         // Force a list rebuild when the list has changed or it will not always render correctly
         m_ClipsListView.Rebuild();
+
+        // This function is the first entry-point in `AudioContainerWindow` after an undo-event that alters the
+        // audio clip list has been triggered. And, whenever the list is altered, we need to make sure the state is stopped.
+        State.Stop();
+        ClearClipFieldProgressBars();
 
         UpdateTransportButtonStates();
         SetTitle();
@@ -1118,9 +1163,19 @@ sealed class AudioContainerWindow : EditorWindow
         rootVisualElement.RegisterCallback<TooltipEvent>(ShowTooltip, TrickleDown.TrickleDown);
     }
 
+    void SubscribeToAudioMasterMuteCallbacksAndEvents()
+    {
+        EditorUtility.onAudioMasterMuteWasUpdated += OnAudioMasterMuteChanged;
+    }
+
     void UnsubscribeFromTooltipCallbacksAndEvents()
     {
         rootVisualElement.UnregisterCallback<TooltipEvent>(ShowTooltip);
+    }
+
+    void UnsubscribeFromAudioMasterMuteCallbacksAndEvents()
+    {
+        EditorUtility.onAudioMasterMuteWasUpdated -= OnAudioMasterMuteChanged;
     }
 
     void ShowTooltip(TooltipEvent evt)
@@ -1129,16 +1184,23 @@ sealed class AudioContainerWindow : EditorWindow
 
         if (name == "play-button" || name == "play-button-image")
         {
-            var mode = State.IsPlayingOrPaused() ? "Stop" : "Play";
-            var shortcut = ShortcutManager.instance.GetShortcutBinding("Audio/Play-stop Audio Random Container");
-
-            if (shortcut.Equals(ShortcutBinding.empty))
+            if (EditorUtility.audioMasterMute)
             {
-                evt.tooltip = mode;
+                evt.tooltip = "Previewing is disabled when the game view is muted. To enable previewing unmute the game view.";
             }
             else
             {
-                evt.tooltip = mode + " (" + shortcut + ")";
+                var mode = State.IsPlayingOrPaused() ? "Stop" : "Play";
+                var shortcut = ShortcutManager.instance.GetShortcutBinding("Audio/Play-stop Audio Random Container");
+
+                if (shortcut.Equals(ShortcutBinding.empty))
+                {
+                    evt.tooltip = mode;
+                }
+                else
+                {
+                    evt.tooltip = mode + " (" + shortcut + ")";
+                }
             }
 
             evt.rect = (evt.target as VisualElement).worldBound;
@@ -1200,14 +1262,14 @@ sealed class AudioContainerWindow : EditorWindow
         if (property.boolValue
             && State.AudioContainer.triggerMode == AudioRandomContainerTriggerMode.Automatic)
         {
-            m_TimeRandomizationButtonImage.style.backgroundImage = new StyleBackground(m_DiceIconOn);
+            m_TimeRandomizationButtonImage.style.backgroundImage = GetIconTexture(Icons.DiceOn);
             m_TimeRandomizationRangeSlider.SetEnabled(true);
             m_TimeRandomizationRangeField.SetEnabled(true);
             m_TimeRandomRangeTracker.SetEnabled(true);
         }
         else
         {
-            m_TimeRandomizationButtonImage.style.backgroundImage = new StyleBackground(m_DiceIconOff);
+            m_TimeRandomizationButtonImage.style.backgroundImage = GetIconTexture(Icons.DiceOff);
             m_TimeRandomizationRangeSlider.SetEnabled(false);
             m_TimeRandomizationRangeField.SetEnabled(false);
             m_TimeRandomRangeTracker.SetEnabled(false);
@@ -1240,13 +1302,13 @@ sealed class AudioContainerWindow : EditorWindow
             && State.AudioContainer.loopMode != AudioRandomContainerLoopMode.Infinite
             && State.AudioContainer.triggerMode == AudioRandomContainerTriggerMode.Automatic)
         {
-            m_CountRandomizationButtonImage.style.backgroundImage = new StyleBackground(m_DiceIconOn);
+            m_CountRandomizationButtonImage.style.backgroundImage = GetIconTexture(Icons.DiceOn);
             m_CountRandomizationRangeSlider.SetEnabled(true);
             m_CountRandomizationRangeField.SetEnabled(true);
         }
         else
         {
-            m_CountRandomizationButtonImage.style.backgroundImage = new StyleBackground(m_DiceIconOff);
+            m_CountRandomizationButtonImage.style.backgroundImage = GetIconTexture(Icons.DiceOff);
             m_CountRandomizationRangeSlider.SetEnabled(false);
             m_CountRandomizationRangeField.SetEnabled(false);
         }
@@ -1257,6 +1319,17 @@ sealed class AudioContainerWindow : EditorWindow
         var newButtonStateString = !State.AudioContainer.loopCountRandomizationEnabled ? "Enabled" : "Disabled";
         Undo.RecordObject(State.AudioContainer, $"Modified Count Randomization {newButtonStateString} in {State.AudioContainer.name}");
         State.AudioContainer.loopCountRandomizationEnabled = !State.AudioContainer.loopCountRandomizationEnabled;
+    }
+
+    void OnAudioMasterMuteChanged(bool isMuted)
+    {
+        if (isMuted && State.IsPlayingOrPaused())
+        {
+            State.Stop();
+            ClearClipFieldProgressBars();
+        }
+
+        UpdateTransportButtonStates();
     }
 
     #endregion
@@ -1343,6 +1416,19 @@ sealed class AudioContainerWindow : EditorWindow
             }
     }
 
+    void OnAssetsMoved(IEnumerable<string> paths)
+    {
+        // If there is no target we are in day 0 state.
+        if (State.AudioContainer == null)
+            return;
+
+        foreach (var path in paths)
+            if (path == State.TargetPath)
+            {
+                State.UpdateTargetPath();
+            }
+    }
+
     class AudioContainerModificationProcessor : AssetModificationProcessor
     {
         /// <summary>
@@ -1352,9 +1438,16 @@ sealed class AudioContainerWindow : EditorWindow
         /// </summary>
         static string[] OnWillSaveAssets(string[] paths)
         {
-            if (Instance != null)
-                Instance.OnWillSaveAssets(paths);
+            // NOTE: this is a global callback that is triggered by changes to ANY project assets of ANY type,
+            // even when the window is closed, so no heavy calls should be done here unless
+            // the window is actually open. To avoid affecting editor performance we use the
+            // cached instance for an early out check rather than EditorWindow.HasOpenInstances.
+            if (Instance == null)
+            {
+                return paths;
+            }
 
+            Instance.OnWillSaveAssets(paths);
             return paths;
         }
     }
@@ -1366,10 +1459,19 @@ sealed class AudioContainerWindow : EditorWindow
         /// and relays it to AudioContainerWindow,
         /// refreshing or clearing the window content.
         /// </summary>
-        static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths)
+        static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssets)
         {
+            // NOTE: this is a global callback that is triggered by changes to ANY project assets of ANY type,
+            // even when the window is closed, so no heavy calls should be done here unless
+            // the window is actually open. To avoid affecting editor performance we use the
+            // cached instance for an early out check rather than EditorWindow.HasOpenInstances.
             if (Instance == null)
+            {
                 return;
+            }
+
+            if (movedFromAssets.Length > 0)
+                Instance.OnAssetsMoved(movedFromAssets);
 
             if (importedAssets.Length > 0)
                 Instance.OnAssetsImported(importedAssets);
@@ -1388,7 +1490,7 @@ sealed class AudioContainerWindow : EditorWindow
     {
         var audioContainerWindow = focusedWindow as AudioContainerWindow;
 
-        if (audioContainerWindow != null && audioContainerWindow.IsDisplayingTarget())
+        if (audioContainerWindow != null && audioContainerWindow.IsDisplayingTarget() && !EditorUtility.audioMasterMute)
         {
             audioContainerWindow.OnPlayStopButtonClicked();
         }

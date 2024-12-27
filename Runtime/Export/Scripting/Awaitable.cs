@@ -8,6 +8,8 @@ using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
+using UnityEngine.Pool;
 
 namespace UnityEngine
 {
@@ -48,19 +50,22 @@ namespace UnityEngine
             public static implicit operator AwaitableHandle(IntPtr handle) => new AwaitableHandle(handle);
         }
 
-        private readonly ManagedLockWithSingleThreadBias _spinLock = default;
+        private SpinLock _spinLock = default;
 
-        static readonly ThreadSafeObjectPool<Awaitable> _pool = new(() => new());
+        static readonly ThreadLocal<ObjectPool<Awaitable>> _pool =
+            new(() => new ObjectPool<Awaitable>(() => new(), collectionCheck: false));
         AwaitableHandle _handle;
         ExceptionDispatchInfo _exceptionToRethrow;
         bool _managedAwaitableDone;
+        AwaiterCompletionThreadAffinity _completionThreadAffinity;
         Action _continuation;
         CancellationTokenRegistration? _cancelTokenRegistration;
+        DoubleBufferedAwaitableList _managedCompletionQueue;
         private Awaitable() { }
 
         internal static Awaitable NewManagedAwaitable()
         {
-            var awaitable = _pool.Get();
+            var awaitable = _pool.Value.Get();
             awaitable._handle = AwaitableHandle.ManagedHandle;
             return awaitable;
         }
@@ -68,7 +73,7 @@ namespace UnityEngine
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static Awaitable FromNativeAwaitableHandle(IntPtr nativeHandle, CancellationToken cancellationToken)
         {
-            var awaitable = _pool.Get();
+            var awaitable = _pool.Value.Get();
             awaitable._handle = nativeHandle;
             unsafe
             {
@@ -88,62 +93,118 @@ namespace UnityEngine
             {
                 throw new ArgumentNullException(nameof(awaitable));
             }
+            bool lockTaken = false;
             try
             {
-                awaitable._spinLock.Acquire();
+                awaitable._spinLock.Enter(ref lockTaken);
                 awaitable._cancelTokenRegistration = cancellationToken.Register(coroutine => ((Awaitable)coroutine).Cancel(), awaitable);
             }
             finally
             {
-                awaitable._spinLock.Release();
+                if (lockTaken)
+                {
+                    awaitable._spinLock.Exit();
+                }
             }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool MatchCompletionThreadAffinity(AwaiterCompletionThreadAffinity awaiterCompletionThreadAffinity)
+        {
+            return awaiterCompletionThreadAffinity switch
+            {
+                AwaiterCompletionThreadAffinity.MainThread => Thread.CurrentThread.ManagedThreadId == _mainThreadId,
+                AwaiterCompletionThreadAffinity.BackgroundThread => Thread.CurrentThread.ManagedThreadId != _mainThreadId,
+                _ => true
+            };
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void RaiseManagedCompletion(Exception exception)
         {
             Action continuation = null;
+            bool lockTaken = false;
+            AwaiterCompletionThreadAffinity awaiterCompletionThreadAffinity;
             try
             {
-                _spinLock.Acquire();
+                _spinLock.Enter(ref lockTaken);
                 if (exception != null)
                 {
                     _exceptionToRethrow = ExceptionDispatchInfo.Capture(exception);
                 }
                 _managedAwaitableDone = true;
                 continuation = _continuation;
+                awaiterCompletionThreadAffinity = _completionThreadAffinity;
                 _continuation = null;
             }
             finally
             {
-                _spinLock.Release();
+                if (lockTaken)
+                {
+                    _spinLock.Exit();
+                }
             }
-            continuation?.Invoke();
+            if(continuation != null)
+            {
+                RunOrScheduleContinuation(awaiterCompletionThreadAffinity, continuation);
+            }
+        }
+
+        private void RunOrScheduleContinuation(AwaiterCompletionThreadAffinity awaiterCompletionThreadAffinity, Action continuation)
+        {
+            if (MatchCompletionThreadAffinity(awaiterCompletionThreadAffinity))
+            {
+                continuation();
+            }
+            else if (awaiterCompletionThreadAffinity == AwaiterCompletionThreadAffinity.MainThread)
+            {
+                _synchronizationContext.Post(DoRunContinuationOnSynchonizationContext, continuation);
+            }
+            else if (awaiterCompletionThreadAffinity == AwaiterCompletionThreadAffinity.BackgroundThread)
+            {
+                Task.Run(continuation);
+            }
+        }
+
+        static void DoRunContinuationOnSynchonizationContext(object continuation)
+        {
+            (continuation as Action)?.Invoke();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void RaiseManagedCompletion()
         {
             Action continuation = null;
+            AwaiterCompletionThreadAffinity awaiterCompletionThreadAffinity;
+            bool lockTaken = false;
             try
             {
-                _spinLock.Acquire();
+                _spinLock.Enter(ref lockTaken);
                 _managedAwaitableDone = true;
+                awaiterCompletionThreadAffinity = _completionThreadAffinity;
                 continuation = _continuation;
                 _continuation = null;
+                _managedCompletionQueue = null;
             }
             finally
             {
-                _spinLock.Release();
+                if (lockTaken)
+                {
+                    _spinLock.Exit();
+                }
             }
-            continuation?.Invoke();
+            if (continuation != null)
+            {
+                RunOrScheduleContinuation(awaiterCompletionThreadAffinity, continuation);
+            }
         }
 
         internal void PropagateExceptionAndRelease()
         {
+            bool lockTaken = false;
             try
             {
-                _spinLock.Acquire();
+                _spinLock.Enter(ref lockTaken);
                 CheckPointerValidity();
                 if (_cancelTokenRegistration.HasValue)
                 {
@@ -151,21 +212,26 @@ namespace UnityEngine
                     _cancelTokenRegistration = null;
                 }
                 _managedAwaitableDone = false;
+                _completionThreadAffinity = AwaiterCompletionThreadAffinity.None;
                 var ptr = _handle;
                 _handle = AwaitableHandle.NullHandle;
                 var toRethrow = _exceptionToRethrow;
                 _exceptionToRethrow = null;
+                _managedCompletionQueue = null;
                 _continuation = null;
                 if (!ptr.IsManaged && !ptr.IsNull)
                 {
                     ReleaseNativeAwaitable(ptr);
                 }
-                _pool.Release(this);
+                _pool.Value.Release(this);
                 toRethrow?.Throw();
             }
             finally
             {
-                _spinLock.Release();
+                if (lockTaken)
+                {
+                    _spinLock.Exit();
+                }
             }
         }
 
@@ -174,6 +240,7 @@ namespace UnityEngine
             var handle = CheckPointerValidity();
             if (handle.IsManaged)
             {
+                _managedCompletionQueue?.Remove(this);
                 RaiseManagedCompletion(new OperationCanceledException());
             }
             else
@@ -189,23 +256,42 @@ namespace UnityEngine
                 CheckPointerValidity();
                 if (_handle.IsManaged)
                 {
+                    return _managedAwaitableDone && MatchCompletionThreadAffinity(_completionThreadAffinity);
+                }
+                return IsNativeAwaitableCompleted(_handle) != 0;
+            }
+        }
+
+        // same as IsCompletedNoLock, but without checking for completion thread affinity
+        private bool IsLogicallyCompletedNoLock
+        {
+            get
+            {
+                CheckPointerValidity();
+                if (_handle.IsManaged)
+                {
                     return _managedAwaitableDone;
                 }
                 return IsNativeAwaitableCompleted(_handle) != 0;
             }
         }
+
         public bool IsCompleted
         {
             get
             {
+                bool lockTaken = false;
                 try
                 {
-                    _spinLock.Acquire();
+                    _spinLock.Enter(ref lockTaken);
                     return IsCompletedNoLock;
                 }
                 finally
                 {
-                    _spinLock.Release();
+                    if (lockTaken)
+                    {
+                        _spinLock.Exit();
+                    }
                 }
             }
         }
@@ -214,9 +300,10 @@ namespace UnityEngine
         {
             get
             {
+                bool lockTaken = false;
                 try
                 {
-                    _spinLock.Acquire();
+                    _spinLock.Enter(ref lockTaken);
                     if (_handle.IsNull)
                     {
                         return true;
@@ -230,7 +317,46 @@ namespace UnityEngine
                 }
                 finally
                 {
-                    _spinLock.Release();
+                    if (lockTaken)
+                    {
+                        _spinLock.Exit();
+                    }
+                }
+            }
+        }
+
+        internal AwaiterCompletionThreadAffinity CompletionThreadAffinity
+        {
+            get
+            {
+                bool lockTaken = false;
+                try
+                {
+                    _spinLock.Enter(ref lockTaken);
+                    return _completionThreadAffinity;
+                }
+                finally
+                {
+                    if (lockTaken)
+                    {
+                        _spinLock.Exit();
+                    }
+                }
+            }
+            set
+            {
+                bool lockTaken = false;
+                try
+                {
+                    _spinLock.Enter(ref lockTaken);
+                    _completionThreadAffinity = value;
+                }
+                finally
+                {
+                    if (lockTaken)
+                    {
+                        _spinLock.Exit();
+                    }
                 }
             }
         }
@@ -251,12 +377,16 @@ namespace UnityEngine
         internal void SetContinuation(Action continuation)
         {
             bool done = false;
+            bool lockTaken = false;
+            AwaiterCompletionThreadAffinity completionThreadAffinity = AwaiterCompletionThreadAffinity.None;
             try
             {
-                _spinLock.Acquire();
-                if (IsCompletedNoLock)
+                _spinLock.Enter(ref lockTaken);
+
+                if (IsLogicallyCompletedNoLock)
                 {
                     done = true;
+                    completionThreadAffinity = _completionThreadAffinity;
                 }
                 else
                 {
@@ -265,11 +395,14 @@ namespace UnityEngine
             }
             finally
             {
-                _spinLock.Release();
+                if (lockTaken)
+                {
+                    _spinLock.Exit();
+                }
             }
             if (done)
             {
-                continuation();
+                RunOrScheduleContinuation(completionThreadAffinity, continuation);
             }
         }
 

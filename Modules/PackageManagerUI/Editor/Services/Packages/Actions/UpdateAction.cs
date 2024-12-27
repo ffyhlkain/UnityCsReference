@@ -33,9 +33,19 @@ internal class UpdateAction : PackageAction
         m_ShowVersion = showVersion;
     }
 
+    // The target version refers to the version that will be installed when the user click on the `Update` button.
+    // in the case where the user click this button directly in package details for an installed version, we want to
+    // install the suggestedUpdate (if it exists), but for other non-installed versions in the version history tab,
+    // we just want to install that version directly.
+    public static IPackageVersion GetUpdateTarget(IPackageVersion version)
+    {
+        return version?.isInstalled == true ? version.package.versions.suggestedUpdate ?? version : version;
+    }
+
     protected override bool TriggerActionImplementation(IList<IPackage> packages)
     {
-        m_OperationDispatcher.Install(packages.Select(p => p?.versions.GetUpdateTarget(p.versions.primary)));
+        if (!m_OperationDispatcher.Install(packages.Select(p => GetUpdateTarget(p.versions.primary))))
+            return false;
         // The current multi-select UI does not allow users to install non-recommended versions
         // Should this change in the future, we'll need to update the analytics event accordingly.
         PackageManagerWindowAnalytics.SendEvent("installUpdateRecommended", packages.Select(p => p.versions.primary));
@@ -44,9 +54,8 @@ internal class UpdateAction : PackageAction
 
     protected override bool TriggerActionImplementation(IPackageVersion version)
     {
-        var versionsList = version?.package?.versions;
-        var installedVersion = versionsList?.installed;
-        var targetVersion = versionsList?.GetUpdateTarget(version);
+        var installedVersion = version?.package.versions?.installed;
+        var targetVersion = GetUpdateTarget(version);
         if (installedVersion != null && !installedVersion.isDirectDependency && installedVersion != targetVersion)
         {
             var featureSetDependents = m_PackageDatabase.GetFeaturesThatUseThisPackage(installedVersion);
@@ -74,7 +83,7 @@ internal class UpdateAction : PackageAction
             if (customizedDependencies.Any())
             {
                 var packageNameAndVersions = string.Join("\n\u2022 ",
-                    customizedDependencies.Select(package => $"{package.displayName} - {package.versions.lifecycleVersion.version}").ToArray());
+                    customizedDependencies.Select(package => $"{package.displayName} - {package.versions.recommended.version}").ToArray());
 
                 var title = string.Format(L10n.Tr("Updating {0}"), version.GetDescriptor());
                 var message = customizedDependencies.Length == 1 ?
@@ -100,7 +109,8 @@ internal class UpdateAction : PackageAction
         }
         else
         {
-            m_OperationDispatcher.Install(targetVersion);
+            if (!m_OperationDispatcher.Install(targetVersion))
+                return false;
 
             var installRecommended = version.package.versions.recommended == targetVersion ? "Recommended" : "NonRecommended";
             var eventName = $"installUpdate{installRecommended}";
@@ -111,10 +121,9 @@ internal class UpdateAction : PackageAction
 
     public override bool IsVisible(IPackageVersion version)
     {
-        var versionsList = version?.package?.versions;
-        var installed = versionsList?.installed;
-        var targetVersion = versionsList?.GetUpdateTarget(version);
-        return installed?.HasTag(PackageTag.VersionLocked) == false
+        var installed = version?.package.versions?.installed;
+        var targetVersion = GetUpdateTarget(version);
+        return installed?.HasTag(PackageTag.InstalledFromPath) == false
                && targetVersion?.HasTag(PackageTag.UpmFormat) == true
                && installed != targetVersion
                && !version.IsRequestedButOverriddenVersion
@@ -136,11 +145,10 @@ internal class UpdateAction : PackageAction
         if (!m_ShowVersion || m_PageManager.activePage.GetSelection().Count > 1)
             return isInProgress ? k_UpdatingToWithoutVersionButtonText : k_UpdateToWithoutVersionButtonText;
 
-        return string.Format(isInProgress ? k_UpdatingToButtonTextFormat : k_UpdateToButtonTextFormat,
-            version?.package?.versions.GetUpdateTarget(version).version);
+        return string.Format(isInProgress ? k_UpdatingToButtonTextFormat : k_UpdateToButtonTextFormat, GetUpdateTarget(version).version);
     }
 
-    public override bool IsInProgress(IPackageVersion v) => m_OperationDispatcher.IsInstallInProgress(v.package.versions.GetUpdateTarget(v));
+    public override bool IsInProgress(IPackageVersion v) => m_OperationDispatcher.IsInstallInProgress(GetUpdateTarget(v));
 
     protected override IEnumerable<DisableCondition> GetAllTemporaryDisableConditions()
     {
@@ -151,7 +159,7 @@ internal class UpdateAction : PackageAction
     protected override IEnumerable<DisableCondition> GetAllDisableConditions(IPackageVersion version)
     {
         // We need to check the target version so that we don't disable the button in the details header
-        yield return new DisableIfVersionDeprecated(version?.package.versions.GetUpdateTarget(version));
+        yield return new DisableIfVersionDeprecated(GetUpdateTarget(version));
         yield return new DisableIfEntitlementsError(version);
     }
 }

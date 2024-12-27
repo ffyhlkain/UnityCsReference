@@ -168,7 +168,11 @@ namespace UnityEditor
         extern internal static bool             IsRayTracingShaderValidForPlatform(RayTracingShader s, ShaderPlatform renderer);
 
         extern internal static void CalculateLightmapStrippingFromCurrentScene();
+        extern internal static void CalculateLightmapStrippingFromCurrentSceneForBuildProfile(
+            out bool lightmapKeepPlain, out bool lightmapKeepDirCombined, out bool lightmapKeepDynamicPlain,
+            out bool lightmapKeepDynamicDirCombined, out bool lightmapKeepShadowMask, out bool lightmapKeepSubtractive);
         extern internal static void CalculateFogStrippingFromCurrentScene();
+        extern internal static void CalculateFogStrippingFromCurrentSceneForBuildProfile(out bool fogKeepLinear, out bool fogKeepExp, out bool fogKeepExp2);
 
         extern internal static Rect rawViewportRect { get; set; }
         extern internal static Rect rawScissorRect  { get; set; }
@@ -204,6 +208,7 @@ namespace UnityEditor
         }
 
         extern public static ComputeShader CreateComputeShaderAsset(AssetImportContext context, string source);
+        extern public static RayTracingShader CreateRayTracingShaderAsset(AssetImportContext context, string source);
 
         [FreeFunction("GetShaderNameRegistry().AddShader")] extern public static void RegisterShader([NotNull] Shader shader);
 

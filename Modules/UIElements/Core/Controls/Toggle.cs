@@ -3,6 +3,7 @@
 // https://unity3d.com/legal/licenses/Unity_Reference_Only_License
 
 using System;
+using System.Diagnostics;
 
 namespace UnityEngine.UIElements
 {
@@ -20,14 +21,23 @@ namespace UnityEngine.UIElements
     ///
     /// To bind the Toggle's state to a boolean variable, set the`binding-path` property in a UI Document (.uxml file), or
     /// the C# `bindingPath` to the variable name.
-    /// 
-    /// For more information, refer to [[wiki:UIE-uxml-element-toggle|UXML element Toggle]].
+    ///
+    /// For more information, refer to [[wiki:UIE-uxml-element-Toggle|UXML element Toggle]].
     /// </remarks>
     public class Toggle : BaseBoolField
     {
         [UnityEngine.Internal.ExcludeFromDocs, Serializable]
         public new class UxmlSerializedData : BaseBoolField.UxmlSerializedData
         {
+            [Conditional("UNITY_EDITOR")]
+            public new static void Register()
+            {
+                UxmlDescriptionCache.RegisterType(typeof(UxmlSerializedData), new UxmlAttributeNames[]
+                {
+                    new(nameof(text), "text")
+                });
+            }
+
             #pragma warning disable 649
             [SerializeField, MultilineTextField] string text;
             [SerializeField, UxmlIgnore, HideInInspector] UxmlAttributeFlags text_UxmlAttributeFlags;

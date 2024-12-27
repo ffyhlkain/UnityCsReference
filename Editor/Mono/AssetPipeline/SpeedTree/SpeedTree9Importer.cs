@@ -21,7 +21,9 @@ using static UnityEditor.SpeedTree.Importer.SpeedTree9Reader;
 
 namespace UnityEditor.SpeedTree.Importer
 {
-    [ScriptedImporter(1, "st9", AllowCaching = true)]
+    // [2024-09-27] version: 3
+    // Fixed code that would lead to m_LODCount vs m_PerLODSettings.arraySize mismatching in GUI 
+    [ScriptedImporter(version: 3, ext: "st9", AllowCaching = true)]
     public class SpeedTree9Importer : ScriptedImporter
     {
         const int SPEEDTREE_9_WIND_VERSION = 1;
@@ -212,10 +214,10 @@ namespace UnityEditor.SpeedTree.Importer
 
             AddDependencyOnExtractedMaterials();
 
-            TriggerAllCabback();
+            TriggerAllCallbacks();
         }
 
-        private void TriggerAllCabback()
+        private void TriggerAllCallbacks()
         {
             var allMethods = AttributeHelper.GetMethodsWithAttribute<MaterialSettingsCallbackAttribute>().methodsWithAttributes;
             foreach (var method in allMethods)
@@ -228,10 +230,20 @@ namespace UnityEditor.SpeedTree.Importer
         private void CacheTreeImporterValues(string assetPath)
         {
             // Variables used a lot are cached, since accessing any Reader array has a non-negligeable cost. 
+            m_LODCount = (uint)m_Tree.Lod.Length;
+            if(m_LODCount > LODGroupGUI.kLODColors.Length)
+            {
+                Debug.LogWarningFormat("Number of LOD meshes in asset ({0}) is larger than the maximum number supported by Unity GUI ({1})." +
+                    "\nImporting only the first {1} LOD meshes."
+                    , m_LODCount, LODGroupGUI.kLODColors.Length);
+
+                // LODGroup GUI won't draw if we're above this limit, so we prevent future assertions here.
+                m_LODCount = (uint)LODGroupGUI.kLODColors.Length;
+            }
+
             m_HasFacingData = TreeHasFacingData();
             m_HasBranch2Data = m_Tree.Wind.DoBranch2;
             m_LastLodIsBillboard = m_Tree.BillboardInfo.LastLodIsBillboard;
-            m_LODCount = (uint)m_Tree.Lod.Length;
             m_CollisionObjectsCount = (uint)m_Tree.CollisionObjects.Length;
 
             WindConfigSDK windCfg = m_Tree.Wind;
@@ -259,7 +271,7 @@ namespace UnityEditor.SpeedTree.Importer
 
                 RegenerateAndPopulateExternalMaterials(this.assetPath);
 
-                TriggerAllCabback();
+                TriggerAllCallbacks();
             }
             finally
             {
@@ -287,13 +299,13 @@ namespace UnityEditor.SpeedTree.Importer
         static ulong ComputeDefaultShaderHash()
         {
             ulong newDefaultShaderHash = 0UL;
-            if (GraphicsSettings.currentRenderPipeline == null || GraphicsSettings.currentRenderPipeline.defaultSpeedTree9Shader == null)
+            if (GraphicsSettings.GetDefaultShader(DefaultShaderType.SpeedTree9) == null)
             {
                 newDefaultShaderHash = 0;
             }
             else
             {
-                if (AssetDatabase.TryGetGUIDAndLocalFileIdentifier(GraphicsSettings.currentRenderPipeline.defaultSpeedTree9Shader, out var guid,
+                if (AssetDatabase.TryGetGUIDAndLocalFileIdentifier(GraphicsSettings.GetDefaultShader(DefaultShaderType.SpeedTree9), out var guid,
                         out long fileId))
                 {
                     newDefaultShaderHash = CombineHash((ulong)guid.GetHashCode(), (ulong)fileId);
@@ -346,17 +358,13 @@ namespace UnityEditor.SpeedTree.Importer
 
             mesh.SetUVs(0, sTMeshGeometry.uvs[0]);
             mesh.SetUVs(1, sTMeshGeometry.uvs[1]);
-
             if (!isBillboard)
             {
-                if (m_HasBranch2Data || m_HasFacingData)
-                {
-                    mesh.SetUVs(2, sTMeshGeometry.uvs[2]);
-                }
-                if (m_HasBranch2Data && m_HasFacingData)
-                {
-                    mesh.SetUVs(3, sTMeshGeometry.uvs[3]);
-                }
+                // SpeedTree shader expects certain UV2 & UV3 values for leaf facing & wind.
+                // if we don't claim them here now, tree rendering may break when Unity
+                // uses UV2 & UV3 and the shader finds unexpected values.
+                mesh.SetUVs(2, sTMeshGeometry.uvs[2]); // Branch2Pos, Branch2Dir, Branch2Weight, <Unused>
+                mesh.SetUVs(3, sTMeshGeometry.uvs[3]); // 2/3 Anchor XYZ, FacingFlag
             }
 
             return mesh;
@@ -405,16 +413,11 @@ namespace UnityEditor.SpeedTree.Importer
                 STVertex vertex = vertices[i];
 
                 sTMeshGeometry.vertices[i].Set(
-                    vertex.Anchor.X + vertex.Offset.X,
+                    vertex.Anchor.X + (vertex.CameraFacing ? -vertex.Offset.X : vertex.Offset.X),
                     vertex.Anchor.Y + vertex.Offset.Y,
                     vertex.Anchor.Z + vertex.Offset.Z);
 
                 sTMeshGeometry.vertices[i] *= m_MeshSettings.scaleFactor;
-
-                if (vertex.CameraFacing)
-                {
-                    sTMeshGeometry.vertices[i].x = vertex.Anchor.X - vertex.Offset.X;
-                }
 
                 sTMeshGeometry.normals[i].Set(vertex.Normal.X, vertex.Normal.Y, vertex.Normal.Z);
 
@@ -458,23 +461,23 @@ namespace UnityEditor.SpeedTree.Importer
 
                 if (!isBillboard)
                 {
-                    if (m_HasBranch2Data)
-                    {
-                        sTMeshGeometry.uvs[currentUV++][i].Set(
-                            vertex.BranchWind2.X,
-                            vertex.BranchWind2.Y,
-                            vertex.BranchWind2.Z,
-                            0.0f);
-                    }
+                    float anchorX = m_HasFacingData ? vertex.Anchor.X * m_MeshSettings.scaleFactor : 0.0f;
+                    float anchorY = m_HasFacingData ? vertex.Anchor.Y * m_MeshSettings.scaleFactor : 0.0f;
+                    float anchorZ = m_HasFacingData ? vertex.Anchor.Z * m_MeshSettings.scaleFactor : 0.0f;
+                    float leafFacingFlag = vertex.CameraFacing ? 1.0f : 0.0f;
 
-                    if (m_HasFacingData)
-                    {
-                        sTMeshGeometry.uvs[currentUV++][i].Set(
-                            vertex.Anchor.X * m_MeshSettings.scaleFactor,
-                            vertex.Anchor.Y * m_MeshSettings.scaleFactor,
-                            vertex.Anchor.Z * m_MeshSettings.scaleFactor,
-                            vertex.CameraFacing ? 1.0f : 0.0f);
-                    }
+                    sTMeshGeometry.uvs[currentUV++][i].Set(
+                        m_HasBranch2Data ? vertex.BranchWind2.X : anchorX,
+                        m_HasBranch2Data ? vertex.BranchWind2.Y : anchorY,
+                        m_HasBranch2Data ? vertex.BranchWind2.Z : anchorZ,
+                        m_HasBranch2Data ? 0.0f /*UNUSED*/      : leafFacingFlag);
+
+                    bool useUV3 = m_HasBranch2Data && m_HasFacingData;
+                    sTMeshGeometry.uvs[currentUV++][i].Set(
+                         useUV3 ? anchorX        : 0.0f,
+                         useUV3 ? anchorY        : 0.0f,
+                         useUV3 ? anchorZ        : 0.0f,
+                         useUV3 ? leafFacingFlag : 0.0f);
                 }
             }
         }
@@ -507,15 +510,7 @@ namespace UnityEditor.SpeedTree.Importer
             int numUVs = 2;
             if (!isBillboard)
             {
-                if (m_HasBranch2Data)
-                {
-                    numUVs += 1;
-                }
-
-                if (m_HasFacingData)
-                {
-                    numUVs += 1;
-                }
+                numUVs += 2; // reserve UV2 & UV3 for 3D-geometry to detect leaf facing (VS effect) correctly
             }
             return numUVs;
         }
@@ -545,6 +540,7 @@ namespace UnityEditor.SpeedTree.Importer
             }
             else if (m_PerLODSettings.Count < m_LODCount)
             {
+                m_PerLODSettings.Clear();
                 for (int i = 0; i < m_LODCount; ++i)
                 {
                     bool isBillboardLOD = m_LastLodIsBillboard && i == m_LODCount - 1;
@@ -1264,6 +1260,7 @@ namespace UnityEditor.SpeedTree.Importer
             // st9
             cfg.branch1StretchLimit = wind.Branch1StretchLimit * scaleFactor;
             cfg.branch2StretchLimit = wind.Branch2StretchLimit * scaleFactor;
+            cfg.importScale = scaleFactor;
             cfg.treeExtentX = (treeBounds.Max.X - treeBounds.Min.X) * scaleFactor;
             cfg.treeExtentY = (treeBounds.Max.Y - treeBounds.Min.Y) * scaleFactor;
             cfg.treeExtentZ = (treeBounds.Max.Z - treeBounds.Min.Z) * scaleFactor;
@@ -1277,7 +1274,7 @@ namespace UnityEditor.SpeedTree.Importer
                 CopyCurve(shared.Turbulence, cfg.turbulenceShared);
                 CopyCurve(shared.Flexibility, cfg.flexibilityShared);
                 cfg.independenceShared = shared.Independence;
-                cfg.sharedHeightStart = wind.SharedStartHeight * scaleFactor;
+                cfg.sharedHeightStart = wind.SharedStartHeight; // this is a % value
                 if (BranchHasAllCurvesValid(in shared))
                 {
                     cfg.doShared = 1;
@@ -1347,29 +1344,25 @@ namespace UnityEditor.SpeedTree.Importer
         #region Others
         private void CalculateScaleFactorFromUnit()
         {
-            float scaleFactor = m_MeshSettings.scaleFactor;
-
             switch (m_MeshSettings.unitConversion)
             {
                 // Use units in the imported file without any conversion.
                 case STUnitConversion.kLeaveAsIs:
-                    scaleFactor = 1.0f;
+                    m_MeshSettings.scaleFactor = 1.0f;
                     break;
                 case STUnitConversion.kFeetToMeters:
-                    scaleFactor = SpeedTreeConstants.kFeetToMetersRatio;
+                    m_MeshSettings.scaleFactor = SpeedTreeConstants.kFeetToMetersRatio;
                     break;
                 case STUnitConversion.kCentimetersToMeters:
-                    scaleFactor = SpeedTreeConstants.kCentimetersToMetersRatio;
+                    m_MeshSettings.scaleFactor = SpeedTreeConstants.kCentimetersToMetersRatio;
                     break;
                 case STUnitConversion.kInchesToMeters:
-                    scaleFactor = SpeedTreeConstants.kInchesToMetersRatio;
+                    m_MeshSettings.scaleFactor = SpeedTreeConstants.kInchesToMetersRatio;
                     break;
                 case STUnitConversion.kCustomConversion:
                     /* no-op */
                     break;
             }
-
-            m_MeshSettings.scaleFactor = scaleFactor;
         }
 
         private bool TreeHasFacingData()
@@ -1390,12 +1383,7 @@ namespace UnityEditor.SpeedTree.Importer
 
         internal static bool TryGetShaderForCurrentRenderPipeline(out Shader shader)
         {
-            shader = null;
-            if (GraphicsSettings.currentRenderPipeline != null)
-            {
-                shader = GraphicsSettings.currentRenderPipeline.defaultSpeedTree9Shader;
-            }
-
+            shader = GraphicsSettings.GetDefaultShader(DefaultShaderType.SpeedTree9);
             if (shader == null)
             {
                 shader = Shader.Find(ImporterSettings.kLegacyShaderName);
@@ -1530,7 +1518,7 @@ namespace UnityEditor.SpeedTree.Importer
         private static void ChangeTextureImporterSettingsForSt9Files(string assetPath)
         {
             SpeedTree9Reader tree = new SpeedTree9Reader();
-            
+
             FileStatus status = tree.Initialize(assetPath);
             if (status != FileStatus.Valid)
             {

@@ -21,6 +21,7 @@ namespace UnityEditor.Build.Profile
             + "Build profiles are stored as assets you can share with your team");
         public static readonly string all = L10n.Tr("All");
         public static readonly string addBuildProfile = L10n.Tr("Add Build Profile");
+        public static readonly string addBuildProfiles = L10n.Tr("Add {0} Build Profiles");
         public static readonly string buildProfilesName = L10n.Tr("Build Profiles");
         public static readonly string platforms = L10n.Tr("Platforms");
         public static readonly string build = L10n.Tr("Build");
@@ -32,7 +33,10 @@ namespace UnityEditor.Build.Profile
         public static readonly string sharedSettingsSectionInfo =
             L10n.Tr("Platforms use this shared scene list. To change the scene list or other settings independently, create a Build Profile.");
         public static readonly string activate = L10n.Tr("Switch Profile");
+        public static readonly string activatePlatform = L10n.Tr("Switch Platform");
         public static readonly string sceneList = L10n.Tr("Scene List");
+        public static readonly string addOpenScenes = L10n.Tr("Add Open Scenes");
+        public static readonly string sceneListOverride = L10n.Tr("Override Global Scene List");
         public static readonly string openSceneList = L10n.Tr("Open Scene List");
         public static readonly string compilingMessage = L10n.Tr("Cannot build player while editor is importing assets or compiling scripts.");
         public static readonly string invalidVirtualTexturingSettingMessage = L10n.Tr("Cannot build player because Virtual Texturing is enabled, but the target platform or graphics API does not support Virtual Texturing. Go to Player Settings to resolve the incompatibility.");
@@ -43,6 +47,9 @@ namespace UnityEditor.Build.Profile
         public static readonly string scriptingDefinesWarningHelpbox = L10n.Tr("Additional scripting defines are specified in Player Settings.");
         public static readonly string apply = L10n.Tr("Apply");
         public static readonly string revert = L10n.Tr("Revert");
+        public static readonly string cancelButtonText = L10n.Tr("Cancel");
+        public static readonly string continueButtonText = L10n.Tr("Continue");
+        public static readonly GUIContent resetToGlobals = EditorGUIUtility.TrTextContent("Reset to Globals");
 
         // Build Profile Player Settings
         public static readonly string playerSettingsLabelText = L10n.Tr("Player Settings Overrides");
@@ -51,20 +58,53 @@ namespace UnityEditor.Build.Profile
         public static readonly string playerSettingsClassicInfo =
             L10n.Tr("Platforms use the global player settings. To customize player settings, create a Build Profile for this platform.");
         public static readonly string customizePlayerSettingsButton = "Customize player settings";
-        public static readonly string playerSettingsCancel = L10n.Tr("Cancel");
-        public static readonly string playerSettingsContinue = L10n.Tr("Continue");
         public static readonly string removePlayerSettingsDialogTitle = L10n.Tr("Remove Player Settings Overrides");
         public static readonly string removePlayerSettingsDialogMessage = L10n.Tr("This will remove all Player Settings overrides");
         public static readonly string resetPlayerSettingsDialogTitle = L10n.Tr("Reset Player Settings to Globals");
         public static readonly string resetPlayerSettingsDialogMessage = L10n.Tr("This will reset all Player Settings overrides and restore all global Player Settings.");
         public static readonly GUIContent playerSettingsReset = EditorGUIUtility.TrTextContent("Reset to Globals");
-        public static readonly GUIContent playerSetttingsRemove = EditorGUIUtility.TrTextContent("Remove Overrides");
+        public static readonly GUIContent playerSettingsRemove = EditorGUIUtility.TrTextContent("Remove Overrides");
+
+        // Build Profile Graphics Settings
+        public static readonly string graphicsSettings = L10n.Tr("Graphics Settings");
+        public static readonly string overrideGraphicsSettingsToggleLabel = L10n.Tr("Override Global Graphics Settings");
+        public static readonly string overrideFoldoutLabel = L10n.Tr("Override Options");
+        public static readonly string removeGraphicsSettingsDialogTitle = L10n.Tr("Remove Graphics Settings Overrides");
+        public static readonly string removeGraphicsSettingsDialogMessage = L10n.Tr("This will remove all Graphics Settings overrides");
+        public static readonly string resetGraphicsSettingsDialogTitle = L10n.Tr("Reset Graphics Settings to Globals");
+        public static readonly string resetGraphicsSettingsDialogMessage = L10n.Tr("This will reset all Graphics Settings overrides to the original globals.");
+
+        // Build Profile Quality Settings
+        public static readonly string overrideQualitySettingsToggleLabel = L10n.Tr("Override Global Quality Settings");
+        public static readonly string overrideQualitySettingsFoldoutLabel = L10n.Tr("Included Quality Levels");
+        public static readonly string removeQualitySettingsDialogTitle = L10n.Tr("Remove Quality Settings Overrides");
+        public static readonly string removeQualitySettingsDialogMessage = L10n.Tr("This will remove all Quality Settings overrides");
+        public static readonly string resetQualitySettingsDialogTitle = L10n.Tr("Reset Quality Settings to Globals");
+        public static readonly string resetQualitySettingsDialogMessage = L10n.Tr("This will reset all Quality Settings overrides to the original globals.");
+
+        // Build Profile Bootstrap View
+        public static readonly string buildProfileConfiguration = L10n.Tr("Configuring Build Profile...");
+        public static readonly string buildProfilePreparation = L10n.Tr("Preparing Build Profile...");
+        public static readonly string packageAddDownloading = L10n.Tr("Downloading package...");
+        public static readonly string packageAddInstalling = L10n.Tr("Installing package...");
+        public static readonly string packageAddError = L10n.Tr("Error adding package {0}!");
+        public static readonly string packagesAddError = L10n.Tr("Error adding packages {0}!");
+        public static readonly string packagesAddDownloading = L10n.Tr("Downloading packages...");
+        public static readonly string packagesAddInstalling = L10n.Tr("Installing packages...");
 
         // Platform Discovery Window
         public static readonly string platformDiscoveryTitle = L10n.Tr("Platform Browser");
         public static readonly string noModuleFoundWarning = L10n.Tr("No module found for the selected profile.");
         public static readonly string notSupportedWarning = L10n.Tr("Target platform does not currently support build profiles.");
         public static readonly string active = L10n.Tr("Active");
+        public static readonly string description = L10n.Tr("Description");
+        public static readonly string packageInstalled = L10n.Tr("Package already installed.");
+        public static readonly string required = L10n.Tr("Required");
+        public static readonly string selectAll = L10n.Tr("Select All");
+        public static readonly string deselectAll = L10n.Tr("Deselect All");
+        public static readonly string packagesHeader = L10n.Tr("Packages");
+        public static readonly string descriptionHeader = L10n.Tr("Description");
+        public static readonly string preconfiguredSettingsHeader = L10n.Tr("Configurations");
 
         // Asset Import Overrides Window
         public static readonly string assetImportOverrideTitle = L10n.Tr("Asset Import Overrides");
@@ -73,5 +113,7 @@ namespace UnityEditor.Build.Profile
         public static readonly string textureCompressionLabel = L10n.Tr("Texture Compression");
         public static readonly string assetImportOverrideDescription =
             L10n.Tr("These settings allow you to override the compression\nand max resolution for textures in your project. This is\nuseful for local development, to speed up texture\nimporting or build target switching.");
+
+        public static string GetSettingsSectionName(string platform) => L10n.Tr($"{platform} Settings");
     }
 }

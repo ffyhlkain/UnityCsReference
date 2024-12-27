@@ -45,10 +45,12 @@ namespace UnityEngine.UIElements
         /// </summary>
         internal void ResetValueAndText();
 
+        [VisibleToOtherModules("UnityEditor.UIBuilderModule")]
         internal void SaveValueAndText();
 
         internal void RestoreValueAndText();
 
+        [VisibleToOtherModules("UnityEditor.UIBuilderModule")]
         internal Func<char, bool> AcceptCharacter { get; set; }
         internal Action<bool> UpdateScrollOffset { get; set; }
         internal Action UpdateValueFromText { get; set; }
@@ -146,6 +148,7 @@ namespace UnityEngine.UIElements
         internal ITextEdition edition => this;
 
         internal TextEditingManipulator editingManipulator { get; private set; }
+        internal bool isInputField = false;
 
         bool m_Multiline;
 
@@ -197,33 +200,23 @@ namespace UnityEngine.UIElements
         {
             get
             {
-                switch (Application.platform)
+                return TouchScreenKeyboard.inputFieldAppearance switch
                 {
-                    case RuntimePlatform.Android:
-                    case RuntimePlatform.IPhonePlayer:
-                    case RuntimePlatform.tvOS:
-                    case RuntimePlatform.WebGLPlayer:
-                        return m_HideMobileInput;
-                }
-                return m_HideMobileInput;
+                    TouchScreenKeyboard.InputFieldAppearance.AlwaysHidden => true,
+                    TouchScreenKeyboard.InputFieldAppearance.AlwaysVisible => false,
+                    _ => m_HideMobileInput,
+                };
             }
             set
             {
-                var current = m_HideMobileInput;
-                switch(Application.platform)
-                {
-                    case RuntimePlatform.Android:
-                    case RuntimePlatform.IPhonePlayer:
-                    case RuntimePlatform.tvOS:
-                    case RuntimePlatform.WebGLPlayer:
-                        m_HideMobileInput = value;
-                        break;
-                    default:
-                        m_HideMobileInput = value;
-                        break;
-                }
-                if (current != m_HideMobileInput)
-                    NotifyPropertyChanged(hideMobileInputProperty);
+                if (TouchScreenKeyboard.inputFieldAppearance != TouchScreenKeyboard.InputFieldAppearance.Customizable)
+                    return;
+
+                if (m_HideMobileInput == value)
+                    return;
+
+                m_HideMobileInput = value;
+                NotifyPropertyChanged(hideMobileInputProperty);
             }
         }
 
@@ -445,9 +438,6 @@ namespace UnityEngine.UIElements
                     ((INotifyValueChanged<string>)this).SetValueWithoutNotify(value);
                     parent?.SendEvent(evt);
                 }
-
-                if (!edition.isDelayed && value != null)
-                    edition.UpdateValueFromText?.Invoke();
             }
         }
         string ITextEdition.CullString(string s)
@@ -558,15 +548,15 @@ namespace UnityEngine.UIElements
             {
                 if (showPlaceholderText)
                 {
-                    return new RenderedText(m_PlaceholderText, ZeroWidthSpace);
+                    return TextUtilities.IsAdvancedTextEnabledForElement(this) ? new RenderedText(m_PlaceholderText) : new RenderedText(m_PlaceholderText, ZeroWidthSpace);
                 }
 
                 if (effectiveMaskChar != char.MinValue) // Password
                 {
-                    return new RenderedText(effectiveMaskChar, m_RenderedText?.Length ?? 0, ZeroWidthSpace);
+                    return TextUtilities.IsAdvancedTextEnabledForElement(this) ? new RenderedText(effectiveMaskChar, m_RenderedText?.Length ?? 0) : new RenderedText(effectiveMaskChar, m_RenderedText?.Length ?? 0, ZeroWidthSpace);
                 }
 
-                if (!isReadOnly) // TextField
+                if (!TextUtilities.IsAdvancedTextEnabledForElement(this) && !isReadOnly) // TextField
                 {
                     return new RenderedText(m_RenderedText, ZeroWidthSpace);
                 }

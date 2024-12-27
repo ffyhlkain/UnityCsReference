@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using Unity.Properties;
 using UnityEngine.Serialization;
 using UnityEngine.TextCore.Text;
@@ -34,6 +35,22 @@ namespace UnityEngine.UIElements
         [UnityEngine.Internal.ExcludeFromDocs, Serializable]
         public new class UxmlSerializedData : BindableElement.UxmlSerializedData
         {
+            [Conditional("UNITY_EDITOR")]
+            public new static void Register()
+            {
+                UxmlDescriptionCache.RegisterType(typeof(UxmlSerializedData), new UxmlAttributeNames[]
+                {
+                    new(nameof(text), "text"),
+                    new(nameof(enableRichText), "enable-rich-text"),
+                    new(nameof(emojiFallbackSupport), "emoji-fallback-support"),
+                    new(nameof(parseEscapeSequences), "parse-escape-sequences"),
+                    new(nameof(isSelectable), "selectable", null, "selectable"),
+                    new(nameof(doubleClickSelectsWord), "double-click-selects-word", null,"selectWordByDoubleClick", "select-word-by-double-click"),
+                    new(nameof(tripleClickSelectsLine), "triple-click-selects-line", null, "selectLineByTripleClick", "select-line-by-triple-click"),
+                    new(nameof(displayTooltipWhenElided), "display-tooltip-when-elided"),
+                });
+            }
+
             #pragma warning disable 649
             [SerializeField, MultilineTextField] string text;
             [SerializeField, UxmlIgnore, HideInInspector] UxmlAttributeFlags text_UxmlAttributeFlags;
@@ -181,6 +198,8 @@ namespace UnityEngine.UIElements
 
         private void OnDetachFromPanel(DetachFromPanelEvent detachEvent)
         {
+            uitkTextHandle.RemoveTextInfoFromPermanentCache();
+            uitkTextHandle.RemoveTextInfoFromTemporaryCache();
             (detachEvent.originPanel as BaseVisualElementPanel)?.liveReloadSystem.UnregisterTextElement(this);
         }
 
@@ -238,8 +257,14 @@ namespace UnityEngine.UIElements
         }
 
         bool m_ParseEscapeSequences;
+
         /// <summary>
-        /// Specifies whether escape sequences are displayed as is or if they are replaced by the character they represent.
+        /// Determines how escape sequences are displayed.
+        /// When set to <c>true</c>, escape sequences (such as `\n`, `\t`)
+        /// are parsed and transformed into their corresponding characters. For example,
+        /// '\n' will insert a new line.
+        /// When set to <c>false</c>, escape sequences are displayed as raw text
+        /// (for example, `\n` is shown as the characters '\' followed by 'n').
         /// </summary>
         [CreateProperty]
         public bool parseEscapeSequences
@@ -304,15 +329,24 @@ namespace UnityEngine.UIElements
 
             if (TextUtilities.IsFontAssigned(this))
             {
-                if (TextUtilities.IsAdvancedTextEnabledForElement(this) && isReadOnly)
+                if (TextUtilities.IsAdvancedTextEnabledForElement(this))
                 {
                     bool isSuccess = false;
                     var textInfo = uitkTextHandle.UpdateNative(ref isSuccess);
                     if (isSuccess)
+                    {
                         mgc.DrawNativeText(textInfo, contentRect.min);
+
+                        if (selection.HasSelection() && selectingManipulator.HasFocus())
+                            DrawNativeHighlighting(mgc);
+                        else if (!edition.isReadOnly && selection.isSelectable && selectingManipulator.RevealCursor())
+                            DrawCaret(mgc);
+                    }
                 }
                 else
+                {
                     mgc.meshGenerator.textJobSystem.GenerateText(mgc, this);
+                }
             }
         }
 

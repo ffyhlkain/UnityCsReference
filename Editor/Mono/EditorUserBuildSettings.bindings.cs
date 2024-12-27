@@ -11,6 +11,7 @@ using System.Runtime.InteropServices;
 using UnityEditor.Build;
 using UnityEditor.Build.Profile;
 using UnityEngine;
+using UnityEditor.Modules;
 
 namespace UnityEditor
 {
@@ -149,6 +150,8 @@ namespace UnityEditor
         // S3 texture compression, nonspecific to DXT variant. Supported on devices running Nvidia Tegra2 platform, including Motorala Xoom, Motorola Atrix, Droid Bionic, and others.
         DXT = 1,
         // PowerVR texture compression. Available in devices running PowerVR SGX530/540 GPU, such as Motorola DROID series; Samsung Galaxy S, Nexus S, and Galaxy Tab; and others.
+        [System.Obsolete("Texture compression format PVRTC has been deprecated and will be removed in a future release")]
+        [EditorBrowsable(EditorBrowsableState.Never)]
         PVRTC = 2,
         [System.Obsolete("UnityEditor.MobileTextureSubtarget.ATC has been deprecated. Use UnityEditor.MobileTextureSubtarget.ETC instead (UnityUpgradable) -> UnityEditor.MobileTextureSubtarget.ETC", true)]
         ATC = 3,
@@ -779,6 +782,65 @@ namespace UnityEditor
         // The currently active build target.
         public static extern BuildTarget activeBuildTarget { get; }
 
+        private static extern GUID GetInternalActivePlatformGuid();
+
+        // Internal setter only to be used for testing.
+        internal static extern void SetActivePlatformGuid(GUID platformId);
+
+        internal static GUID activePlatformGuid
+        {
+            get
+            {
+                // The following code is addressing the fact that the actually selected build target
+                // and the stored GUID might disagree. This can happen when a platform is not available
+                // in the editor(for example a user selects a platform, checks in that setting, another
+                // one pulls the project but does not have the platform installed).
+                GUID activePlatformGuid = GetInternalActivePlatformGuid();
+                GUID basePlatformGuid = BuildTargetDiscovery.GetBasePlatformGUIDFromBuildTarget(EditorUserBuildSettingsUtils.CalculateActiveNamedBuildTarget(), activeBuildTarget);
+
+                if (activePlatformGuid.Empty())
+                    return basePlatformGuid;
+
+                // Account for derived platforms (the active platform is different from its base platform).
+                // Jira https://jira.unity3d.com/browse/PLAT-9234
+                if (activePlatformGuid != basePlatformGuid)
+                {
+                    // This logic will make sure that the base platform gets selected if the encountered platform
+                    // is a derived one and the platform support for the derived platform is not available to
+                    // align with the behavior of the editor before introducing derived platforms.
+                    var module = ModuleManager.FindPlatformSupportModule(activePlatformGuid);
+                    if (module is IDerivedBuildTargetProvider)
+                        return activePlatformGuid;
+                    return basePlatformGuid;
+                }
+
+                return activePlatformGuid;
+            }
+        }
+
+        [NativeMethod("SwitchActiveBuildTargetGuid")]
+        private static extern bool SwitchActiveBuildTargetAndSubTargetGuid(GUID platformGuid, BuildTarget target, int subtarget);
+        internal static bool SwitchActiveBuildTargetGuid(GUID platformGuid)
+        {
+            // Account for derived platforms.
+            // Jira https://jira.unity3d.com/browse/PLAT-9234
+            // The editor triggers recompilation on a build target or subtarget change already. Both of these values
+            // will not change by design when switching between a derived platform and its base platform or between
+            // derived platforms of the same baseplatform so we need to trigger a rebuild if the GUID changes and
+            // the support module stays the same.
+            if (platformGuid != activePlatformGuid && ModuleManager.FindPlatformSupportModule(platformGuid) == ModuleManager.FindPlatformSupportModule(activePlatformGuid))
+            {
+                BuildProfileModuleUtil.RequestScriptCompilation(null);
+            }
+
+            var (buildTargetFromGuid, subTargetFromGuid) = BuildTargetDiscovery.GetBuildTargetAndSubtargetFromGUID(platformGuid);
+
+            int activeSubtarget = (int)subTargetFromGuid;
+            if(subTargetFromGuid == StandaloneBuildSubtarget.Default)
+                activeSubtarget = EditorUserBuildSettings.GetActiveSubtargetFor(buildTargetFromGuid);
+
+            return SwitchActiveBuildTargetAndSubTargetGuid(platformGuid, buildTargetFromGuid, activeSubtarget);
+        }
 
         // The currently active build target.
         internal static extern BuildTargetGroup activeBuildTargetGroup { get; }
@@ -793,8 +855,8 @@ namespace UnityEditor
         public static bool SwitchActiveBuildTargetAsync(BuildTargetGroup targetGroup, BuildTarget target)
             => SwitchActiveBuildTargetAndSubtargetAsync(target, EditorUserBuildSettings.GetActiveSubtargetFor(target));
 
-        public static bool SwitchActiveBuildTarget(NamedBuildTarget namedBuildTarget, BuildTarget target) =>
-            BuildPlatforms.instance.BuildPlatformFromNamedBuildTarget(namedBuildTarget).SetActive(target);
+        public static bool SwitchActiveBuildTarget(NamedBuildTarget namedBuildTarget, BuildTarget target)
+            => BuildPlatforms.instance.BuildPlatformFromNamedBuildTarget(namedBuildTarget).SetActive(target);
 
         // This is used by tests -- note that it does tell the editor that current platform is X, without
         // validating if support for it is installed. However it does not do things like script recompile
@@ -1071,6 +1133,14 @@ namespace UnityEditor
             set;
         }
 
+        public static extern bool switchEnableUnpublishableErrors
+        {
+            [NativeMethod("GetEnableUnpublishableErrorsForSwitch")]
+            get;
+            [NativeMethod("SetEnableUnpublishableErrorsForSwitch")]
+            set;
+        }
+
         internal static extern SwitchShaderCompilerConfig switchShaderCompilerConfig
         {
             [NativeMethod("GetSwitchShaderCompilerConfig")]
@@ -1115,10 +1185,19 @@ namespace UnityEditor
         }
 
         internal static extern bool isBuildProfileAvailable { get; set; }
+        internal static BuildProfile activeBuildProfile
+        {
+            get => GetActiveBuildProfile() as BuildProfile;
+            set => SetActiveBuildProfile(value);
+        }
+
+        private static extern ScriptableObject GetActiveBuildProfile();
+        private static extern void SetActiveBuildProfile(ScriptableObject buildProfile);
+
         internal static extern void CopyFromBuildProfile(ScriptableObject buildProfile);
         internal static extern void CopyToBuildProfile(ScriptableObject buildProfile);
 
-        internal static extern void SetBuildProfilePath(string path);
-        internal static extern string[] GetActiveProfileYamlScriptingDefines();
+        internal static extern string[] GetActiveProfileScriptingDefines();
+        internal static extern void SetActiveProfileScriptingDefines(string[] defines);
     }
 }

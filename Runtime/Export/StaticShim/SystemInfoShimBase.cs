@@ -74,6 +74,10 @@ namespace UnityEngine
 
         public virtual FoveatedRenderingCaps foveatedRenderingCaps => UnityEngine.SystemInfo.foveatedRenderingCaps;
 
+        public virtual bool supportsVariableRateShading => UnityEngine.SystemInfo.supportsVariableRateShading;
+
+        public virtual bool hasTiledGPU => UnityEngine.SystemInfo.hasTiledGPU;
+
         public virtual bool hasHiddenSurfaceRemovalOnGPU => UnityEngine.SystemInfo.hasHiddenSurfaceRemovalOnGPU;
 
         public virtual bool hasDynamicUniformArrayIndexingInFragmentShaders =>
@@ -237,6 +241,8 @@ namespace UnityEngine
         public virtual bool supportsMultisampleResolveStencil => UnityEngine.SystemInfo.supportsMultisampleResolveStencil;
 
         public virtual bool supportsIndirectArgumentsBuffer => UnityEngine.SystemInfo.supportsIndirectArgumentsBuffer;
+
+        public virtual bool supportsDepthFetchInRenderPass => UnityEngine.SystemInfo.supportsDepthFetchInRenderPass;
 
         public virtual bool IsFormatSupported(GraphicsFormat format, GraphicsFormatUsage usage)
         {

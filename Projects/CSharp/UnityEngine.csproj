@@ -27,6 +27,9 @@
     <Compile Include="..\..\External\baselib\baselib\CSharp\BindingsUnity\Baselib_FileIO.gen.binding.cs">
       <Link>External\baselib\baselib\CSharp\BindingsUnity\Baselib_FileIO.gen.binding.cs</Link>
     </Compile>
+    <Compile Include="..\..\External\baselib\baselib\CSharp\BindingsUnity\Baselib_HostnameLookup.gen.binding.cs">
+      <Link>External\baselib\baselib\CSharp\BindingsUnity\Baselib_HostnameLookup.gen.binding.cs</Link>
+    </Compile>
     <Compile Include="..\..\External\baselib\baselib\CSharp\BindingsUnity\Baselib_Memory.gen.binding.cs">
       <Link>External\baselib\baselib\CSharp\BindingsUnity\Baselib_Memory.gen.binding.cs</Link>
     </Compile>
@@ -159,8 +162,8 @@
     <Compile Include="..\..\Modules\Accessibility\VisionUtility.cs">
       <Link>Modules\Accessibility\VisionUtility.cs</Link>
     </Compile>
-    <Compile Include="..\..\Modules\AndroidJNI\AndroidApp.bindings.cs">
-      <Link>Modules\AndroidJNI\AndroidApp.bindings.cs</Link>
+    <Compile Include="..\..\Modules\AndroidJNI\AndroidApplication.bindings.cs">
+      <Link>Modules\AndroidJNI\AndroidApplication.bindings.cs</Link>
     </Compile>
     <Compile Include="..\..\Modules\AndroidJNI\AndroidApplicationExitInfo.cs">
       <Link>Modules\AndroidJNI\AndroidApplicationExitInfo.cs</Link>
@@ -180,6 +183,9 @@
     <Compile Include="..\..\Modules\AndroidJNI\AndroidGame.cs">
       <Link>Modules\AndroidJNI\AndroidGame.cs</Link>
     </Compile>
+    <Compile Include="..\..\Modules\AndroidJNI\AndroidInsets.bindings.cs">
+      <Link>Modules\AndroidJNI\AndroidInsets.bindings.cs</Link>
+    </Compile>
     <Compile Include="..\..\Modules\AndroidJNI\AndroidJNI.bindings.cs">
       <Link>Modules\AndroidJNI\AndroidJNI.bindings.cs</Link>
     </Compile>
@@ -194,6 +200,54 @@
     </Compile>
     <Compile Include="..\..\Modules\AndroidJNI\AssemblyInfo.cs">
       <Link>Modules\AndroidJNI\AssemblyInfo.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Modules\AndroidJNI\Configuration\AndroidColorModeHdr.cs">
+      <Link>Modules\AndroidJNI\Configuration\AndroidColorModeHdr.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Modules\AndroidJNI\Configuration\AndroidColorModeWideColorGamut.cs">
+      <Link>Modules\AndroidJNI\Configuration\AndroidColorModeWideColorGamut.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Modules\AndroidJNI\Configuration\AndroidConfiguration.cs">
+      <Link>Modules\AndroidJNI\Configuration\AndroidConfiguration.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Modules\AndroidJNI\Configuration\AndroidHardwareKeyboardHidden.cs">
+      <Link>Modules\AndroidJNI\Configuration\AndroidHardwareKeyboardHidden.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Modules\AndroidJNI\Configuration\AndroidKeyboard.cs">
+      <Link>Modules\AndroidJNI\Configuration\AndroidKeyboard.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Modules\AndroidJNI\Configuration\AndroidKeyboardHidden.cs">
+      <Link>Modules\AndroidJNI\Configuration\AndroidKeyboardHidden.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Modules\AndroidJNI\Configuration\AndroidNavigation.cs">
+      <Link>Modules\AndroidJNI\Configuration\AndroidNavigation.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Modules\AndroidJNI\Configuration\AndroidNavigationHidden.cs">
+      <Link>Modules\AndroidJNI\Configuration\AndroidNavigationHidden.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Modules\AndroidJNI\Configuration\AndroidOrientation.cs">
+      <Link>Modules\AndroidJNI\Configuration\AndroidOrientation.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Modules\AndroidJNI\Configuration\AndroidScreenLayoutDirection.cs">
+      <Link>Modules\AndroidJNI\Configuration\AndroidScreenLayoutDirection.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Modules\AndroidJNI\Configuration\AndroidScreenLayoutLong.cs">
+      <Link>Modules\AndroidJNI\Configuration\AndroidScreenLayoutLong.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Modules\AndroidJNI\Configuration\AndroidScreenLayoutRound.cs">
+      <Link>Modules\AndroidJNI\Configuration\AndroidScreenLayoutRound.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Modules\AndroidJNI\Configuration\AndroidScreenLayoutSize.cs">
+      <Link>Modules\AndroidJNI\Configuration\AndroidScreenLayoutSize.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Modules\AndroidJNI\Configuration\AndroidTouchScreen.cs">
+      <Link>Modules\AndroidJNI\Configuration\AndroidTouchScreen.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Modules\AndroidJNI\Configuration\AndroidUiModeNight.cs">
+      <Link>Modules\AndroidJNI\Configuration\AndroidUiModeNight.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Modules\AndroidJNI\Configuration\AndroidUiModeType.cs">
+      <Link>Modules\AndroidJNI\Configuration\AndroidUiModeType.cs</Link>
     </Compile>
     <Compile Include="..\..\Modules\Animation\Managed\Animation.deprecated.cs">
       <Link>Modules\Animation\Managed\Animation.deprecated.cs</Link>
@@ -552,6 +606,9 @@
     <Compile Include="..\..\Modules\HierarchyCore\Managed\HierarchyNodeTypeHandlerBase.cs">
       <Link>Modules\HierarchyCore\Managed\HierarchyNodeTypeHandlerBase.cs</Link>
     </Compile>
+    <Compile Include="..\..\Modules\HierarchyCore\Managed\HierarchyNodeTypeHandlerBaseEnumerable.cs">
+      <Link>Modules\HierarchyCore\Managed\HierarchyNodeTypeHandlerBaseEnumerable.cs</Link>
+    </Compile>
     <Compile Include="..\..\Modules\HierarchyCore\Managed\HierarchyPropertyString.cs">
       <Link>Modules\HierarchyCore\Managed\HierarchyPropertyString.cs</Link>
     </Compile>
@@ -725,6 +782,9 @@
     </Compile>
     <Compile Include="..\..\Modules\IMGUI\TextSelectingUtilities.cs">
       <Link>Modules\IMGUI\TextSelectingUtilities.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Modules\ImageConversion\ScriptBindings\AssemblyInfo.cs">
+      <Link>Modules\ImageConversion\ScriptBindings\AssemblyInfo.cs</Link>
     </Compile>
     <Compile Include="..\..\Modules\ImageConversion\ScriptBindings\ImageConversion.bindings.cs">
       <Link>Modules\ImageConversion\ScriptBindings\ImageConversion.bindings.cs</Link>
@@ -1287,6 +1347,9 @@
     <Compile Include="..\..\Modules\TextCoreFontEngine\Managed\Glyph.cs">
       <Link>Modules\TextCoreFontEngine\Managed\Glyph.cs</Link>
     </Compile>
+    <Compile Include="..\..\Modules\TextCoreTextEngine\Managed\ATGMeshInfo.cs">
+      <Link>Modules\TextCoreTextEngine\Managed\ATGMeshInfo.cs</Link>
+    </Compile>
     <Compile Include="..\..\Modules\TextCoreTextEngine\Managed\AssemblyInfo.cs">
       <Link>Modules\TextCoreTextEngine\Managed\AssemblyInfo.cs</Link>
     </Compile>
@@ -1341,6 +1404,9 @@
     <Compile Include="..\..\Modules\TextCoreTextEngine\Managed\TextAssets\FontAsset\FontAssetAtlasPopulation.cs">
       <Link>Modules\TextCoreTextEngine\Managed\TextAssets\FontAsset\FontAssetAtlasPopulation.cs</Link>
     </Compile>
+    <Compile Include="..\..\Modules\TextCoreTextEngine\Managed\TextAssets\FontAsset\FontAssetFactory.cs">
+      <Link>Modules\TextCoreTextEngine\Managed\TextAssets\FontAsset\FontAssetFactory.cs</Link>
+    </Compile>
     <Compile Include="..\..\Modules\TextCoreTextEngine\Managed\TextAssets\FontAsset\FontAssetFontFeatures.cs">
       <Link>Modules\TextCoreTextEngine\Managed\TextAssets\FontAsset\FontAssetFontFeatures.cs</Link>
     </Compile>
@@ -1389,6 +1455,9 @@
     <Compile Include="..\..\Modules\TextCoreTextEngine\Managed\TextGenerator\NativeTextGenerationSettings.bindings.cs">
       <Link>Modules\TextCoreTextEngine\Managed\TextGenerator\NativeTextGenerationSettings.bindings.cs</Link>
     </Compile>
+    <Compile Include="..\..\Modules\TextCoreTextEngine\Managed\TextGenerator\RichTextTagParser.cs">
+      <Link>Modules\TextCoreTextEngine\Managed\TextGenerator\RichTextTagParser.cs</Link>
+    </Compile>
     <Compile Include="..\..\Modules\TextCoreTextEngine\Managed\TextGenerator\TextGenerationSettings.cs">
       <Link>Modules\TextCoreTextEngine\Managed\TextGenerator\TextGenerationSettings.cs</Link>
     </Compile>
@@ -1419,8 +1488,17 @@
     <Compile Include="..\..\Modules\TextCoreTextEngine\Managed\TextGenerator\TextLib.bindings.cs">
       <Link>Modules\TextCoreTextEngine\Managed\TextGenerator\TextLib.bindings.cs</Link>
     </Compile>
+    <Compile Include="..\..\Modules\TextCoreTextEngine\Managed\TextGenerator\TextSelectionService.bindings.cs">
+      <Link>Modules\TextCoreTextEngine\Managed\TextGenerator\TextSelectionService.bindings.cs</Link>
+    </Compile>
     <Compile Include="..\..\Modules\TextCoreTextEngine\Managed\TextHandle.cs">
       <Link>Modules\TextCoreTextEngine\Managed\TextHandle.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Modules\TextCoreTextEngine\Managed\TextHandlePermanentCache.cs">
+      <Link>Modules\TextCoreTextEngine\Managed\TextHandlePermanentCache.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Modules\TextCoreTextEngine\Managed\TextHandleTemporaryCache.cs">
+      <Link>Modules\TextCoreTextEngine\Managed\TextHandleTemporaryCache.cs</Link>
     </Compile>
     <Compile Include="..\..\Modules\TextCoreTextEngine\Managed\TextInfo.cs">
       <Link>Modules\TextCoreTextEngine\Managed\TextInfo.cs</Link>
@@ -2088,9 +2166,6 @@
     <Compile Include="..\..\Modules\UIElements\Core\HierarchyTraversal.cs">
       <Link>Modules\UIElements\Core\HierarchyTraversal.cs</Link>
     </Compile>
-    <Compile Include="..\..\Modules\UIElements\Core\IDataWatchService.cs">
-      <Link>Modules\UIElements\Core\IDataWatchService.cs</Link>
-    </Compile>
     <Compile Include="..\..\Modules\UIElements\Core\IEnumerableUtils.cs">
       <Link>Modules\UIElements\Core\IEnumerableUtils.cs</Link>
     </Compile>
@@ -2165,9 +2240,6 @@
     </Compile>
     <Compile Include="..\..\Modules\UIElements\Core\Layout\Model\Components\LayoutNodeData.cs">
       <Link>Modules\UIElements\Core\Layout\Model\Components\LayoutNodeData.cs</Link>
-    </Compile>
-    <Compile Include="..\..\Modules\UIElements\Core\Layout\Model\Components\LayoutStyleData.cs">
-      <Link>Modules\UIElements\Core\Layout\Model\Components\LayoutStyleData.cs</Link>
     </Compile>
     <Compile Include="..\..\Modules\UIElements\Core\Layout\Model\FixedBuffer.cs">
       <Link>Modules\UIElements\Core\Layout\Model\FixedBuffer.cs</Link>
@@ -2249,9 +2321,6 @@
     </Compile>
     <Compile Include="..\..\Modules\UIElements\Core\MouseManipulator.cs">
       <Link>Modules\UIElements\Core\MouseManipulator.cs</Link>
-    </Compile>
-    <Compile Include="..\..\Modules\UIElements\Core\Native\ImmediateStylePainter.bindings.cs">
-      <Link>Modules\UIElements\Core\Native\ImmediateStylePainter.bindings.cs</Link>
     </Compile>
     <Compile Include="..\..\Modules\UIElements\Core\Native\Renderer\MeshWriteDataInterface.bindings.cs">
       <Link>Modules\UIElements\Core\Native\Renderer\MeshWriteDataInterface.bindings.cs</Link>
@@ -2781,14 +2850,26 @@
     <Compile Include="..\..\Modules\UIElements\Core\TextShadow.cs">
       <Link>Modules\UIElements\Core\TextShadow.cs</Link>
     </Compile>
+    <Compile Include="..\..\Modules\UIElements\Core\Text\ATGTextEventHandler.cs">
+      <Link>Modules\UIElements\Core\Text\ATGTextEventHandler.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Modules\UIElements\Core\Text\ATGTextHandle.cs">
+      <Link>Modules\UIElements\Core\Text\ATGTextHandle.cs</Link>
+    </Compile>
     <Compile Include="..\..\Modules\UIElements\Core\Text\PanelTextSettings.cs">
       <Link>Modules\UIElements\Core\Text\PanelTextSettings.cs</Link>
     </Compile>
     <Compile Include="..\..\Modules\UIElements\Core\Text\TextEditingManipulator.cs">
       <Link>Modules\UIElements\Core\Text\TextEditingManipulator.cs</Link>
     </Compile>
+    <Compile Include="..\..\Modules\UIElements\Core\Text\TextEventHandler.cs">
+      <Link>Modules\UIElements\Core\Text\TextEventHandler.cs</Link>
+    </Compile>
     <Compile Include="..\..\Modules\UIElements\Core\Text\TextSelectingManipulator.cs">
       <Link>Modules\UIElements\Core\Text\TextSelectingManipulator.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Modules\UIElements\Core\Text\TextUtilities.cs">
+      <Link>Modules\UIElements\Core\Text\TextUtilities.cs</Link>
     </Compile>
     <Compile Include="..\..\Modules\UIElements\Core\Text\UITKTextHandle.cs">
       <Link>Modules\UIElements\Core\Text\UITKTextHandle.cs</Link>
@@ -2948,6 +3029,9 @@
     </Compile>
     <Compile Include="..\..\Modules\UIElements\Core\VisualTreeViewDataUpdater.cs">
       <Link>Modules\UIElements\Core\VisualTreeViewDataUpdater.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Modules\UIElements\Core\WorldSpaceData.cs">
+      <Link>Modules\UIElements\Core\WorldSpaceData.cs</Link>
     </Compile>
     <Compile Include="..\..\Modules\UIElements\InputSystem\InputSystemEventSystem.cs">
       <Link>Modules\UIElements\InputSystem\InputSystemEventSystem.cs</Link>
@@ -3660,6 +3744,9 @@
     <Compile Include="..\..\Runtime\Export\Graphics\GraphicsFormatUtility.bindings.cs">
       <Link>Runtime\Export\Graphics\GraphicsFormatUtility.bindings.cs</Link>
     </Compile>
+    <Compile Include="..\..\Runtime\Export\Graphics\GraphicsJobsFilterModes.bindings.cs">
+      <Link>Runtime\Export\Graphics\GraphicsJobsFilterModes.bindings.cs</Link>
+    </Compile>
     <Compile Include="..\..\Runtime\Export\Graphics\GraphicsManagers.bindings.cs">
       <Link>Runtime\Export\Graphics\GraphicsManagers.bindings.cs</Link>
     </Compile>
@@ -3750,6 +3837,15 @@
     <Compile Include="..\..\Runtime\Export\Graphics\ShaderWarmup.bindings.cs">
       <Link>Runtime\Export\Graphics\ShaderWarmup.bindings.cs</Link>
     </Compile>
+    <Compile Include="..\..\Runtime\Export\Graphics\ShadingRateImage.bindings.cs">
+      <Link>Runtime\Export\Graphics\ShadingRateImage.bindings.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Runtime\Export\Graphics\ShadingRateImage.cs">
+      <Link>Runtime\Export\Graphics\ShadingRateImage.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Runtime\Export\Graphics\ShadingRateInfo.binding.cs">
+      <Link>Runtime\Export\Graphics\ShadingRateInfo.binding.cs</Link>
+    </Compile>
     <Compile Include="..\..\Runtime\Export\Graphics\SplashScreen.bindings.cs">
       <Link>Runtime\Export\Graphics\SplashScreen.bindings.cs</Link>
     </Compile>
@@ -3764,6 +3860,9 @@
     </Compile>
     <Compile Include="..\..\Runtime\Export\Graphics\Texture.deprecated.cs">
       <Link>Runtime\Export\Graphics\Texture.deprecated.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Runtime\Export\Graphics\VulkanDeviceFilterLists.bindings.cs">
+      <Link>Runtime\Export\Graphics\VulkanDeviceFilterLists.bindings.cs</Link>
     </Compile>
     <Compile Include="..\..\Runtime\Export\Graphics\Watermark.bindings.cs">
       <Link>Runtime\Export\Graphics\Watermark.bindings.cs</Link>
@@ -3956,6 +4055,9 @@
     </Compile>
     <Compile Include="..\..\Runtime\Export\RenderPipeline\AttachmentDescriptor.cs">
       <Link>Runtime\Export\RenderPipeline\AttachmentDescriptor.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Runtime\Export\RenderPipeline\BitOperationUtils.cs">
+      <Link>Runtime\Export\RenderPipeline\BitOperationUtils.cs</Link>
     </Compile>
     <Compile Include="..\..\Runtime\Export\RenderPipeline\BlendState.cs">
       <Link>Runtime\Export\RenderPipeline\BlendState.cs</Link>
@@ -4157,12 +4259,6 @@
     </Compile>
     <Compile Include="..\..\Runtime\Export\Scripting\Awaitable.DelayedCall.cs">
       <Link>Runtime\Export\Scripting\Awaitable.DelayedCall.cs</Link>
-    </Compile>
-    <Compile Include="..\..\Runtime\Export\Scripting\Awaitable.Synchronization.cs">
-      <Link>Runtime\Export\Scripting\Awaitable.Synchronization.cs</Link>
-    </Compile>
-    <Compile Include="..\..\Runtime\Export\Scripting\Awaitable.ThreadSafeObjectPool.cs">
-      <Link>Runtime\Export\Scripting\Awaitable.ThreadSafeObjectPool.cs</Link>
     </Compile>
     <Compile Include="..\..\Runtime\Export\Scripting\Awaitable.Threading.cs">
       <Link>Runtime\Export\Scripting\Awaitable.Threading.cs</Link>
@@ -4425,6 +4521,9 @@
     <Compile Include="..\..\Runtime\Export\Shaders\ShaderProperties.cs">
       <Link>Runtime\Export\Shaders\ShaderProperties.cs</Link>
     </Compile>
+    <Compile Include="..\..\Runtime\Export\Shaders\ShaderVariantAnalytics\ShaderRuntimeInfoAnalytics.cs">
+      <Link>Runtime\Export\Shaders\ShaderVariantAnalytics\ShaderRuntimeInfoAnalytics.cs</Link>
+    </Compile>
     <Compile Include="..\..\Runtime\Export\Shaders\ShaderVariantCollection.bindings.cs">
       <Link>Runtime\Export\Shaders\ShaderVariantCollection.bindings.cs</Link>
     </Compile>
@@ -4569,6 +4668,9 @@
     <Compile Include="..\..\Runtime\Export\XR\Pose.cs">
       <Link>Runtime\Export\XR\Pose.cs</Link>
     </Compile>
+    <Compile Include="..\..\Runtime\Export\iOS\AppleDevice.bindings.cs">
+      <Link>Runtime\Export\iOS\AppleDevice.bindings.cs</Link>
+    </Compile>
     <Compile Include="..\..\Runtime\Export\iOS\OnDemandResources.bindings.cs">
       <Link>Runtime\Export\iOS\OnDemandResources.bindings.cs</Link>
     </Compile>
@@ -4577,6 +4679,9 @@
     </Compile>
     <Compile Include="..\..\Runtime\Export\iOS\iOSDevice.bindings.cs">
       <Link>Runtime\Export\iOS\iOSDevice.bindings.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Runtime\Export\iOS\iOSDevice.cs">
+      <Link>Runtime\Export\iOS\iOSDevice.cs</Link>
     </Compile>
     <Compile Include="..\..\Runtime\Export\iOS\iOSReplayKit.bindings.cs">
       <Link>Runtime\Export\iOS\iOSReplayKit.bindings.cs</Link>
@@ -4590,8 +4695,8 @@
     <Compile Include="..\..\Runtime\Export\iOS\tvOS.bindings.deprecated.cs">
       <Link>Runtime\Export\iOS\tvOS.bindings.deprecated.cs</Link>
     </Compile>
-    <Compile Include="..\..\Runtime\Export\iOS\tvOSDevice.bindings.cs">
-      <Link>Runtime\Export\iOS\tvOSDevice.bindings.cs</Link>
+    <Compile Include="..\..\Runtime\Export\iOS\tvOSDevice.cs">
+      <Link>Runtime\Export\iOS\tvOSDevice.cs</Link>
     </Compile>
     <Compile Include="..\..\Runtime\Jobs\Managed\BatchQueries.cs">
       <Link>Runtime\Jobs\Managed\BatchQueries.cs</Link>
@@ -4613,6 +4718,9 @@
     </Compile>
     <Compile Include="..\..\Runtime\Jobs\ScriptBindings\Jobs.bindings.cs">
       <Link>Runtime\Jobs\ScriptBindings\Jobs.bindings.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Runtime\NameFormatter\NameFormatter.bindings.cs">
+      <Link>Runtime\NameFormatter\NameFormatter.bindings.cs</Link>
     </Compile>
     <Compile Include="..\..\Runtime\Profiler\ScriptBindings\FrameDebugger.bindings.cs">
       <Link>Runtime\Profiler\ScriptBindings\FrameDebugger.bindings.cs</Link>

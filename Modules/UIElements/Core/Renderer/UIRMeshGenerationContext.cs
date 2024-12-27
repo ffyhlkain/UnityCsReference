@@ -141,30 +141,6 @@ namespace UnityEngine.UIElements
         /// <remarks>
         /// When this method is called, it is not possible to use <see cref="SetNextVertex"/> to fill the vertices.
         /// </remarks>
-        /// <example>
-        /// <code>
-        /// public class MyVisualElement : VisualElement
-        /// {
-        ///     void MyGenerateVisualContent(MeshGenerationContext mgc)
-        ///     {
-        ///         var meshWriteData = mgc.Allocate(4, 6);
-        ///         // meshWriteData has been allocated with 6 indices for 2 triangles
-        ///
-        ///         // ... set the vertices
-        ///
-        ///         // Set indices for the first triangle
-        ///         meshWriteData.SetNextIndex(0);
-        ///         meshWriteData.SetNextIndex(1);
-        ///         meshWriteData.SetNextIndex(2);
-        ///
-        ///         // Set indices for the second triangle
-        ///         meshWriteData.SetNextIndex(2);
-        ///         meshWriteData.SetNextIndex(1);
-        ///         meshWriteData.SetNextIndex(3);
-        ///     }
-        /// }
-        /// </code>
-        /// </example>
         public void SetAllVertices(Vertex[] vertices)
         {
             if (currentVertex == 0)
@@ -266,7 +242,7 @@ namespace UnityEngine.UIElements
     }
 
     /// <summary>
-    /// Provides methods for generating a <see cref="VisualElement"/>'s visual content during the <see cref="generateVisualContent"/> callback.
+    /// Provides methods for generating a visual element's visual content during the [[VisualElement.generateVisualContent]] callback.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -283,57 +259,7 @@ namespace UnityEngine.UIElements
     /// </para>
     /// </remarks>
     /// <example>
-    /// <code>
-    /// <![CDATA[
-    /// class TexturedElement : VisualElement
-    /// {
-    ///     static readonly Vertex[] k_Vertices = new Vertex[4];
-    ///     static readonly ushort[] k_Indices = { 0, 1, 2, 2, 3, 0 };
-    ///
-    ///     static TexturedElement()
-    ///     {
-    ///         k_Vertices[0].tint = Color.white;
-    ///         k_Vertices[1].tint = Color.white;
-    ///         k_Vertices[2].tint = Color.white;
-    ///         k_Vertices[3].tint = Color.white;
-    ///
-    ///         k_Vertices[0].uv = new Vector2(0, 0);
-    ///         k_Vertices[1].uv = new Vector2(0, 1);
-    ///         k_Vertices[2].uv = new Vector2(1, 1);
-    ///         k_Vertices[3].uv = new Vector2(1, 0);
-    ///     }
-    ///
-    ///     public TexturedElement()
-    ///     {
-    ///         generateVisualContent += OnGenerateVisualContent;
-    ///         m_Texture = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/tex.png");
-    ///     }
-    ///
-    ///     Texture2D m_Texture;
-    ///
-    ///     void OnGenerateVisualContent(MeshGenerationContext mgc)
-    ///     {
-    ///         Rect r = contentRect;
-    ///         if (r.width < 0.01f || r.height < 0.01f)
-    ///             return; // Skip rendering when too small.
-    ///
-    ///         float left = 0;
-    ///         float right = r.width;
-    ///         float top = 0;
-    ///         float bottom = r.height;
-    ///
-    ///         k_Vertices[0].position = new Vector3(left, bottom, Vertex.nearZ);
-    ///         k_Vertices[1].position = new Vector3(left, top, Vertex.nearZ);
-    ///         k_Vertices[2].position = new Vector3(right, top, Vertex.nearZ);
-    ///         k_Vertices[3].position = new Vector3(right, bottom, Vertex.nearZ);
-    ///
-    ///         MeshWriteData mwd = mgc.Allocate(k_Vertices.Length, k_Indices.Length, m_Texture);
-    ///         mwd.SetAllVertices(k_Vertices);
-    ///         mwd.SetAllIndices(k_Indices);
-    ///     }
-    /// }
-    /// ]]>
-    /// </code>
+    /// <code source="../../../../Modules/UIElements/Tests/UIElementsExamples/Assets/Examples/TexturedElement.cs"/>
     /// </example>
     public class MeshGenerationContext
     {
@@ -351,8 +277,11 @@ namespace UnityEngine.UIElements
         public VisualElement visualElement { get; private set; }
 
         /// <summary>
-        /// The vector painter object used to issue drawing commands.
+        /// The painter object used to issue 2D drawing commands. Use this object to draw vector shapes such as lines, arcs and Bezier curves.
         /// </summary>
+        /// <example>
+        /// <code source="../../../../Modules/UIElements/Tests/UIElementsExamples/Assets/Examples/Painter2DDrawing.cs"/>
+        /// </example>
         public Painter2D painter2D
         {
             get
@@ -414,10 +343,19 @@ namespace UnityEngine.UIElements
         /// <param name="vertexCount">The number of vertices to allocate. The maximum is 65535 (or UInt16.MaxValue).</param>
         /// <param name="indexCount">The number of triangle list indices to allocate. Each 3 indices represent one triangle, so this value should be multiples of 3.</param>
         /// <param name="texture">An optional texture to be applied on the triangles allocated. Pass null to rely on vertex colors only.</param>
+        /// <returns>An object that gives access to the newely allocated data. If the returned vertex count is 0, the allocation failed (the system ran out of memory).</returns>
         /// <remarks>
-        /// See <see cref="Vertex.position"/> for details on geometry generation conventions. If a valid texture was passed, then the returned <see cref="MeshWriteData"/> will also describe a rectangle for the UVs to use to sample the passed texture. This is needed because textures passed to this API can be internally copied into a larger atlas.
+        /// See <see cref="Vertex.position"/> for details on geometry generation conventions. When the vertices are indexed, the triangles described must follow clock-wise winding order given that Y+ goes down.
         /// </remarks>
-        /// <returns>An object that gives access to the newely allocated data. If the returned vertex count is 0, then allocation failed (the system ran out of memory).</returns>
+        /// <remarks>
+        /// If a valid texture was passed, then the <see cref="Vertex.uv"/> values should be used to map the texture to the geometry.
+        /// </remarks>
+        /// <remarks>
+        /// SA: [[MeshWriteData]]
+        /// </remarks>
+        /// <example>
+        /// <code source="../../../../Modules/UIElements/Tests/UIElementsExamples/Assets/Examples/TexturedElement.cs"/>
+        /// </example>
         public MeshWriteData Allocate(int vertexCount, int indexCount, Texture texture = null)
         {
             using (k_AllocateMarker.Auto())

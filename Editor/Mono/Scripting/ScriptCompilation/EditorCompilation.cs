@@ -26,6 +26,7 @@ using CompilerMessageType = UnityEditor.Scripting.Compilers.CompilerMessageType;
 using Directory = System.IO.Directory;
 using File = System.IO.File;
 using UnityEditor.Build;
+using UnityEngine.Pool;
 
 namespace UnityEditor.Scripting.ScriptCompilation
 {
@@ -861,6 +862,12 @@ namespace UnityEditor.Scripting.ScriptCompilation
                 ? Constants.ScriptAssembliesAndTypeDBTarget
                 : Constants.ScriptAssembliesTarget;
 
+            var extraScriptingDefines = new List<string>();
+            if(scriptAssemblySettings.BuildingForEditor)
+                extraScriptingDefines.Add("UNITY_EDITOR");
+            if(scriptAssemblySettings.BuildingDevelopmentBuild)
+                extraScriptingDefines.Add("DEVELOPMENT_BUILD");
+
             buildRequest.DataForBuildProgram.Add(() => BeeScriptCompilation.ScriptCompilationDataFor(
                 this,
                 scriptAssemblies,
@@ -868,7 +875,8 @@ namespace UnityEditor.Scripting.ScriptCompilation
                 scriptAssemblySettings.OutputDirectory,
                 buildTarget,
                 scriptAssemblySettings.BuildingForEditor,
-                !scriptAssemblySettings.BuildingWithoutScriptUpdater));
+                !scriptAssemblySettings.BuildingWithoutScriptUpdater,
+                extraScriptingDefines.ToArray()));
 
             var cts = new CancellationTokenSource();
 
@@ -966,11 +974,10 @@ namespace UnityEditor.Scripting.ScriptCompilation
 
             predefinedAssembliesCompilerOptions.ApiCompatibilityLevel = PlayerSettings.GetApiCompatibilityLevel(namedBuildTarget);
 
-            ICompilationExtension compilationExtension = null;
-            if ((options & EditorScriptCompilationOptions.BuildingForEditor) == 0)
-            {
-                compilationExtension = ModuleManager.FindPlatformSupportModule(ModuleManager.GetTargetStringFromBuildTarget(buildTarget))?.CreateCompilationExtension();
-            }
+            var tempCompilationExtension = ModuleManager.FindPlatformSupportModule(ModuleManager.GetTargetStringFromBuildTarget(buildTarget))?.CreateCompilationExtension();
+            ICompilationExtension compilationExtension =
+                ((options & EditorScriptCompilationOptions.BuildingForEditor) == 0 || tempCompilationExtension?.GetAdditionalEditorDefines().Count() > 0) ?
+                    tempCompilationExtension : null;
 
             List<string> additionalCompilationArguments = new List<string>(PlayerSettings.GetAdditionalCompilerArguments(namedBuildTarget));
 
@@ -1027,7 +1034,7 @@ namespace UnityEditor.Scripting.ScriptCompilation
 
             var isCompiling = false;
 
-            var removeAssemblyBuilders = new HashSet<AssemblyBuilder>();
+            using var _ = HashSetPool<AssemblyBuilder>.Get(out var removeAssemblyBuilders);
 
             // Check status of compile tasks
             foreach (var assemblyBuilder in assemblyBuilders)
@@ -1050,7 +1057,8 @@ namespace UnityEditor.Scripting.ScriptCompilation
             // Remove all compile tasks that finished compiling.
             if (removeAssemblyBuilders.Count > 0)
             {
-                assemblyBuilders.RemoveAll(t => removeAssemblyBuilders.Contains(t));
+                foreach (var assemblyBuilder in removeAssemblyBuilders)
+                    assemblyBuilders.Remove(assemblyBuilder);
             }
 
             return isCompiling;
@@ -1087,6 +1095,7 @@ namespace UnityEditor.Scripting.ScriptCompilation
             if (!IsCompilationTaskCompiling() && IsScriptCompilationRequested())
             {
                 Profiler.BeginSample("CompilationPipeline.CompileScripts");
+
                 CompileStatus compileStatus;
                 try
                 {
@@ -1150,6 +1159,8 @@ namespace UnityEditor.Scripting.ScriptCompilation
                         Console.WriteLine(msg.Output);
                     }
             }
+
+            ConsoleWindow.ClearConsoleOnRecompile();
 
             var messagesForNodeResults = ProcessCompilationResult(scriptCompilationState.ScriptAssemblies, result, scriptCompilationState.Settings.BuildingForEditor, scriptCompilationState.ActiveBuild);
             var compilerMessages = messagesForNodeResults.SelectMany(a => a).ToArray();

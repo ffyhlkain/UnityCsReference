@@ -28,6 +28,7 @@ using UnityEditor.UIElements;
 using UnityEngine.Serialization;
 using UnityEngine.UIElements;
 using Component = UnityEngine.Component;
+using static UnityEditor.SceneViewMotion;
 
 namespace UnityEditor
 {
@@ -138,7 +139,7 @@ namespace UnityEditor
             get
             {
                 if (s_LastActiveSceneView == null && s_SceneViews.Count > 0)
-                    s_LastActiveSceneView = s_SceneViews[0] as SceneView;
+                    lastActiveSceneView = s_SceneViews[0] as SceneView;
                 return s_LastActiveSceneView;
             }
 
@@ -263,10 +264,13 @@ namespace UnityEditor
 
         static void OnNonSelectedObjectWasDestroyed(int instanceID)
         {
-            if (s_CachedChildRenderersForOutlining != null && s_CachedChildRenderersForOutlining.Contains(instanceID))
+            if ((!s_ActiveEditorsDirty) || (!s_SelectionCacheDirty))
             {
-                s_ActiveEditorsDirty = true;
-                s_SelectionCacheDirty = true;
+                if (s_CachedChildRenderersForOutliningHashSet != null && s_CachedChildRenderersForOutliningHashSet.Contains(instanceID))
+                {
+                    s_ActiveEditorsDirty = true;
+                    s_SelectionCacheDirty = true;
+                }
             }
         }
 
@@ -461,6 +465,7 @@ namespace UnityEditor
         internal bool m_WasFocused = false;
 
         static int[] s_CachedParentRenderersForOutlining, s_CachedChildRenderersForOutlining;
+        static HashSet<int> s_CachedChildRenderersForOutliningHashSet;
 
         [Serializable]
         public class SceneViewState
@@ -1231,12 +1236,18 @@ namespace UnityEditor
         {
             var command = locked ? EventCommandNames.FrameSelectedWithLock : EventCommandNames.FrameSelected;
 
-            var win = focusedWindow;
+            var win = mouseOverWindow;
             var ret = win != null && win.SendEvent(EditorGUIUtility.CommandEvent(command));
 
-            if (!ret)
+            if (ret)
             {
-                win = mouseOverWindow;
+                // In case the window under the mouse handle the Focus event, it should be focused on.
+                win.Focus();
+            }
+            else
+            {
+                // Otherwise get the current focused window to handle that event.
+                win = focusedWindow;
                 ret = win != null && win.SendEvent(EditorGUIUtility.CommandEvent(command));
             }
 
@@ -1247,6 +1258,7 @@ namespace UnityEditor
                 lastActiveSceneView.SendEvent(EditorGUIUtility.CommandEvent(command));
         }
 
+        [RequiredByNativeCode]
         public static bool FrameLastActiveSceneView()
         {
             if (lastActiveSceneView == null)
@@ -1334,13 +1346,6 @@ namespace UnityEditor
             var inPlayMode = (EditorApplication.isPlaying || EditorApplication.isPaused);
             if (inPlayMode && m_Parent.vSyncEnabled)
                 m_Parent.EnableVSync(false);
-
-            //OnAddedAsTab is called after the lastActiveSceneView has been updated, so m_PreviousScene is there to keep this reference
-            if (m_PreviousScene != null && s_SceneViews.Count > 0)
-            {
-                m_PreviousScene.overlayCanvas.CopySaveData(out var overlaySaveData);
-                overlayCanvas.ApplySaveData(overlaySaveData);
-            }
         }
 
         public override void OnEnable()
@@ -1349,14 +1354,24 @@ namespace UnityEditor
             rootVisualElement.Add(cameraViewVisualElement);
 
             m_SceneViewMotion = new SceneViewMotion();
+
             rootVisualElement.RegisterCallback<MouseEnterEvent>(e => m_SceneViewMotion.viewportsUnderMouse = true);
             rootVisualElement.RegisterCallback<MouseLeaveEvent>(e => m_SceneViewMotion.viewportsUnderMouse = false);
-
+            rootVisualElement.RegisterCallback<MouseEnterWindowEvent>(e => m_SceneViewMotion.viewportsUnderMouse = true);
+            rootVisualElement.RegisterCallback<MouseLeaveWindowEvent>(e => m_SceneViewMotion.viewportsUnderMouse = false);
+            
             m_OrientationGizmo = overlayCanvas.overlays.FirstOrDefault(x => x is SceneOrientationGizmo) as SceneOrientationGizmo;
 
             titleContent = GetLocalizedTitleContent();
 
             m_RectSelection = new RectSelection();
+
+            if (s_SceneViews.Count == 0)
+            {
+                m_SceneViewMotion.RegisterShortcutContexts();
+                m_RectSelection.RegisterShortcutContext();
+            }
+
             m_SceneViewMotion.CompleteSceneViewMotionTool();
             m_Viewpoint.AssignSceneView(this);
 
@@ -1627,6 +1642,12 @@ namespace UnityEditor
                 DestroyImmediate(s_MipColorsTexture, true);
 
             s_SceneViews.Remove(this);
+
+            if (s_SceneViews.Count == 0)
+            {
+                m_SceneViewMotion.UnregisterShortcutContexts();
+                m_RectSelection.UnregisterShortcutContext();
+            }
 
             if (s_LastActiveSceneView == this)
                 lastActiveSceneView = s_SceneViews.Count > 0 ? s_SceneViews[0] as SceneView : null;
@@ -2245,7 +2266,9 @@ namespace UnityEditor
 
                 if (evt.type == EventType.Repaint)
                     RenderFilteredScene(groupSpaceCameraRect);
-
+              
+                DrawPingedObjectSubmeshOutlineIfNeeded();
+                
                 if (sceneRendersToRT)
                 {
                     GUIClip.Internal_PopParentClip();
@@ -2278,7 +2301,7 @@ namespace UnityEditor
                 {
                     if (s_SelectionCacheDirty)
                     {
-                        HandleUtility.FilterInstanceIDs(Selection.gameObjects, out s_CachedParentRenderersForOutlining, out s_CachedChildRenderersForOutlining);
+                        HandleUtility.FilterInstanceIDs(Selection.gameObjects, out s_CachedParentRenderersForOutlining, out s_CachedChildRenderersForOutlining, out s_CachedChildRenderersForOutliningHashSet);
                         s_SelectionCacheDirty = false;
                     }
 
@@ -2290,8 +2313,15 @@ namespace UnityEditor
                 }
 
                 DrawRenderModeOverlay(groupSpaceCameraRect);
+
+                DrawPingedObjectSubmeshOutlineIfNeeded();
             }
 
+            ShaderUtil.allowAsyncCompilation = oldAsync;
+        }
+
+        void DrawPingedObjectSubmeshOutlineIfNeeded()
+        {
             if (isPingingObject)
             {
                 var currentTime = Time.realtimeSinceStartup;
@@ -2313,8 +2343,6 @@ namespace UnityEditor
                     }
                 }
             }
-
-            ShaderUtil.allowAsyncCompilation = oldAsync;
         }
 
         void RenderFilteredScene(Rect groupSpaceCameraRect)
@@ -2392,7 +2420,7 @@ namespace UnityEditor
             {
                 if (s_SelectionCacheDirty)
                 {
-                    HandleUtility.FilterInstanceIDs(Selection.gameObjects, out s_CachedParentRenderersForOutlining, out s_CachedChildRenderersForOutlining);
+                    HandleUtility.FilterInstanceIDs(Selection.gameObjects, out s_CachedParentRenderersForOutlining, out s_CachedChildRenderersForOutlining, out s_CachedChildRenderersForOutliningHashSet);
                     s_SelectionCacheDirty = false;
                 }
 
@@ -2446,6 +2474,10 @@ namespace UnityEditor
         void HandleViewToolCursor(Rect cameraRect)
         {
             if (!Tools.viewToolActive || Event.current.type != EventType.Repaint)
+                return;
+            // In case multiple scene views are opened, we only want to set the cursor for the one being hovered
+            // Skip if the mouse is over an overlay or an area that should not use a custom cursor
+            if (mouseOverWindow is SceneView view && (mouseOverWindow != this || !view.sceneViewMotion.viewportsUnderMouse))
                 return;
 
             var cursor = MouseCursor.Arrow;
@@ -2538,6 +2570,10 @@ namespace UnityEditor
             Color origColor = GUI.color;
             Rect origCameraRect = m_Camera.rect;
             Rect windowSpaceCameraRect = cameraViewport;
+
+            //If we know the window space camera rect is invalid, we can early-out here
+            if(windowSpaceCameraRect.width <= 0 || windowSpaceCameraRect.height <= 0)
+                return;
 
             HandleClickAndDragToFocus();
 
@@ -2673,7 +2709,7 @@ namespace UnityEditor
             // Do not pass the camera transform to the SceneViewMotion calculations.
             // The camera transform is calculation *output* not *input*.
             // Avoiding using it as input too avoids errors accumulating.
-            m_SceneViewMotion.DoViewTool();
+            m_SceneViewMotion.DoViewTool(this);
 
             // Update active viewpoint if there's one.
             // Must happen after SceneViewMotion.DoViewTool() so it knows
@@ -2726,8 +2762,8 @@ namespace UnityEditor
             if (m_StageHandling != null)
                 m_StageHandling.EndOnGUI();
         }
-        
-        [Shortcut("Scene View/Show Scene View Context Menu", typeof(SceneView), KeyCode.Mouse1)]
+
+        [Shortcut("Scene View/Menu", typeof(SceneViewViewport), KeyCode.Mouse1)]
         static void OpenActionMenu(ShortcutArguments args)
         {
             // The mouseOverWindow check is necessary for MacOS because right-clicking does not
@@ -2741,12 +2777,12 @@ namespace UnityEditor
             if (ve == null)
                 return;
 
-            var context = args.context as SceneView;
-            if (ve == context.cameraViewVisualElement)
+            var context = args.context as SceneViewViewport;
+            if (ve == context.window.cameraViewVisualElement)
             {
                 ContextMenuUtility.ShowActionMenu();
                 // UUM-61727 - Force an InputEvent in IMGUI so the ContextMenu will actually open on all platforms
-                context.SendEvent(new Event { type = EventType.Layout });
+                context.window.SendEvent(new Event { type = EventType.Layout });
             }
         }
 
@@ -2986,9 +3022,13 @@ namespace UnityEditor
 
         void HandleMouseCursor()
         {
+            // In case multiple scene views are opened, we only want to set the cursor for the one being hovered
+            if (mouseOverWindow is SceneView && mouseOverWindow != this)
+                return;
+
             Event evt = Event.current;
             Rect cursorRect = new Rect(0, 0, position.width, position.height);
-            var checkMouseRects = evt.type == EventType.MouseMove || evt.type == EventType.Repaint;
+            var checkMouseRects = evt.type == EventType.Repaint;
 
             // Determine if mouse is inside a new cursor rect
             if (checkMouseRects)
@@ -3531,6 +3571,11 @@ namespace UnityEditor
             }
 
             m_OrientationGizmo?.UpdateGizmoLabel(this, direction * Vector3.forward, m_Ortho.target);
+        }
+
+        internal void UpdateOrientationGizmos()
+        {
+            m_OrientationGizmo?.UpdateGizmoLabel(this, rotation * Vector3.forward, m_Ortho.target);
         }
 
         void DefaultHandles()

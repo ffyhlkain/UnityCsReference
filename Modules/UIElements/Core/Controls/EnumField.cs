@@ -3,6 +3,7 @@
 // https://unity3d.com/legal/licenses/Unity_Reference_Only_License
 
 using System;
+using System.Diagnostics;
 using Unity.Properties;
 using UnityEngine.Bindings;
 using UnityEngine.Scripting.APIUpdating;
@@ -43,7 +44,7 @@ namespace UnityEngine.UIElements
     }
 
     /// <summary>
-    /// Makes a dropdown for switching between enum values. For more information, refer to [[wiki:|UIE-uxml-element EnumField|UXML element EnumField]].
+    /// Makes a dropdown for switching between enum values. For more information, refer to [[wiki:UIE-uxml-element-EnumField|UXML element EnumField]].
     /// </summary>
     [MovedFrom(true, UpgradeConstants.EditorNamespace, UpgradeConstants.EditorAssembly)]
     public class EnumField : BaseField<Enum>
@@ -53,6 +54,18 @@ namespace UnityEngine.UIElements
         [UnityEngine.Internal.ExcludeFromDocs, Serializable]
         public new class UxmlSerializedData : BaseField<Enum>.UxmlSerializedData
         {
+            [Conditional("UNITY_EDITOR")]
+            public new static void Register()
+            {
+                BaseField<Enum>.UxmlSerializedData.Register();
+                UxmlDescriptionCache.RegisterType(typeof(UxmlSerializedData), new UxmlAttributeNames[]
+                {
+                    new (nameof(typeAsString), "type", typeof(Enum)),
+                    new (nameof(valueAsString), "value"),
+                    new (nameof(includeObsoleteValues), "include-obsolete-values"),
+                });
+            }
+
             #pragma warning disable 649
             [UxmlTypeReference(typeof(Enum))]
             [SerializeField, UxmlAttribute("type")] string typeAsString;
@@ -326,7 +339,7 @@ namespace UnityEngine.UIElements
         internal void PopulateDataFromType(Type enumType)
         {
             m_EnumType = enumType;
-            m_EnumData = GetCachedEnumData(m_EnumType, includeObsoleteValues ? CachedType.IncludeObsoleteExceptErrors : CachedType.ExcludeObsolete);
+            m_EnumData = GetCachedEnumData(m_EnumType, includeObsoleteValues ? CachedType.IncludeObsoleteExceptErrors : CachedType.ExcludeObsolete, NameFormatter.FormatVariableName);
         }
 
         public override void SetValueWithoutNotify(Enum newValue)

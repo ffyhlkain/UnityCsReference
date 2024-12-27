@@ -179,6 +179,7 @@ namespace UnityEditor.UIElements
         bool m_IsOpenForEdit;
         bool m_InvalidateGUIBlockCache = true;
         bool m_Rebind;
+        VisualElement m_ContextWidthElement;
 
         /// <summary>
         /// Gets or sets the editor backing this inspector element.
@@ -314,7 +315,7 @@ namespace UnityEditor.UIElements
                 if (obj == null)
                     return;
 
-                m_Editor = Editor.CreateEditor(obj.targetObject);
+                m_Editor = Editor.CreateEditor(obj.targetObjects);
                 m_OwnsEditor = true;
             }
             else
@@ -337,6 +338,19 @@ namespace UnityEditor.UIElements
             {
                 m_Rebind = true;
                 this.Bind(boundObject);
+            }
+
+            var currentElement = parent;
+            while (currentElement != null)
+            {
+                if (!currentElement.ClassListContains(PropertyEditor.s_MainContainerClassName))
+                {
+                    currentElement = currentElement.parent;
+                    continue;
+                }
+
+                m_ContextWidthElement = currentElement;
+                break;
             }
         }
 
@@ -501,15 +515,15 @@ namespace UnityEditor.UIElements
         /// <returns>The found or created instance.</returns>
         Editor GetOrCreateEditor(SerializedObject serializedObject)
         {
-            Object target = null;
+            Object[] targets = null;
 
             if (serializedObject != null && serializedObject.m_NativeObjectPtr != IntPtr.Zero)
-                target = serializedObject.targetObject;
+                targets = serializedObject.targetObjects;
 
             if (m_Editor != null)
             {
                 // First try to re-use the instance we have on hand. If this matches our given object we can simply re-use it.
-                if (m_Editor.target == target || m_Editor.serializedObject == serializedObject)
+                if (m_Editor.serializedObject == serializedObject || ArrayUtility.ArrayReferenceEquals(m_Editor.targets, targets))
                     return m_Editor;
 
                 // We need to generate a new editor instance, first cleanup any owned editor resources we have.
@@ -517,7 +531,7 @@ namespace UnityEditor.UIElements
             }
 
             // Fallback to creating our own editor instance for the given object.
-            m_Editor = Editor.CreateEditor(target);
+            m_Editor = Editor.CreateEditor(targets);
             m_OwnsEditor = true;
 
             return m_Editor;
@@ -686,7 +700,7 @@ namespace UnityEditor.UIElements
                     EditorGUIUtility.hierarchyMode = true;
                     EditorGUIUtility.comparisonViewMode = comparisonViewMode;
 
-                    var originalWideMode = SetWideModeForWidth(inspector);
+                    var originalWideMode = SetWideModeForWidth(m_ContextWidthElement ?? inspector);
 
                     GUIStyle editorWrapper = (targetEditor.UseDefaultMargins() && targetEditor.CanBeExpandedViaAFoldoutWithoutUpdate()
                         ? EditorStyles.inspectorDefaultMargins

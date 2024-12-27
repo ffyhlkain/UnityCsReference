@@ -6,6 +6,8 @@ namespace UnityEditor.PackageManager.UI.Internal
 {
     internal class PackageDynamicTagLabel : PackageBaseTagLabel
     {
+        public const string k_DisableEllipsisClass = "disable-ellipsis";
+
         private PackageTag m_Tag;
         private bool m_IsVersionItem;
         public PackageDynamicTagLabel(bool isVersionItem = false)
@@ -52,17 +54,9 @@ namespace UnityEditor.PackageManager.UI.Internal
                     text = L10n.Tr("Pre");
                     tooltip = L10n.Tr("Pre-release");
                     break;
-                case PackageTag.Release:
-                    text = L10n.Tr("R");
-                    tooltip = L10n.Tr("Release");
-                    break;
                 case PackageTag.Experimental:
                     text = L10n.Tr("Exp");
                     tooltip = L10n.Tr("Experimental");
-                    break;
-                case PackageTag.ReleaseCandidate:
-                    text = L10n.Tr("RC");
-                    tooltip = L10n.Tr("Release Candidate");
                     break;
                 case PackageTag.None:
                 default:
@@ -70,6 +64,11 @@ namespace UnityEditor.PackageManager.UI.Internal
                     tooltip = string.Empty;
                     break;
             }
+
+            // Sometimes the UI Element layout engine would calculate the size to be 1px less than it should be, causing
+            // the tag to show up as just ellipsis in some cases. We are adding the special handling here so that short
+            // tags never show ellipsis
+            EnableInClassList(k_DisableEllipsisClass, text.Length <= 3);
         }
 
         public override void Refresh(IPackageVersion version)
@@ -87,12 +86,8 @@ namespace UnityEditor.PackageManager.UI.Internal
                 UpdateTag(m_IsVersionItem ? PackageTag.Deprecated : PackageTag.None);
             else if (version.HasTag(PackageTag.PreRelease))
                 UpdateTag(PackageTag.PreRelease);
-            else if (m_IsVersionItem && version.HasTag(PackageTag.Release))
-                UpdateTag(PackageTag.Release);
             else if (version.HasTag(PackageTag.Experimental))
                 UpdateTag(PackageTag.Experimental);
-            else if (version.HasTag(PackageTag.ReleaseCandidate))
-                UpdateTag(PackageTag.ReleaseCandidate);
             else
                 UpdateTag(PackageTag.None);
         }

@@ -3,17 +3,51 @@
 // https://unity3d.com/legal/licenses/Unity_Reference_Only_License
 
 using System;
+using System.Diagnostics;
 
 namespace UnityEngine.UIElements
 {
     /// <summary>
-    /// A slider containing floating point values. For more information, refer to [[wiki:UIE-uxml-element-slider|UXML element Slider]].
+    /// A slider containing floating point values.
     /// </summary>
+    /// <remarks>
+    /// The Slider control is a horizontal or vertical bar with a handle that can be moved to select a value from a range.
+    /// The range is defined by the @@lowValue@@ and @@highValue@@ properties.
+    ///\\
+    ///\\
+    /// The slider manages navigation events in a customized manner. When it detects <see cref="NavigationMoveEvent"/>.
+    /// that align with the slider's direction, it adjusts the slider's value. If it detects a
+    /// <see cref="NavigationSubmitEvent"/>, it removes the BaseSlider_1::ref::movableUssClassName
+    /// class from the dragger, causing all Navigation events to revert to their default behavior.
+    /// A second navigation submit event re-enables the movableUssClassName class on the dragger and
+    /// restores the previous customized behavior.
+    ///\\
+    ///\\
+    /// For more information and code examples, refer to the [[wiki:UIE-uxml-element-Slider|UXML element Slider]] manual page.
+    /// </remarks>
+    /// <remarks>
+    /// SA: [[MinMaxSlider]]
+    /// </remarks>
     public class Slider : BaseSlider<float>
     {
         [UnityEngine.Internal.ExcludeFromDocs, Serializable]
         public new class UxmlSerializedData : BaseSlider<float>.UxmlSerializedData
         {
+            [Conditional("UNITY_EDITOR")]
+            public new static void Register()
+            {
+                BaseSlider<float>.UxmlSerializedData.Register();
+                UxmlDescriptionCache.RegisterType(typeof(UxmlSerializedData), new UxmlAttributeNames[]
+                {
+                    new(nameof(lowValue), "low-value"),
+                    new(nameof(highValue), "high-value"),
+                    new(nameof(pageSize), "page-size"),
+                    new(nameof(showInputField), "show-input-field"),
+                    new(nameof(direction), "direction"),
+                    new(nameof(inverted), "inverted"),
+                });
+            }
+
             #pragma warning disable 649
             [SerializeField] float lowValue;
             [SerializeField, UxmlIgnore, HideInInspector] UxmlAttributeFlags lowValue_UxmlAttributeFlags;
@@ -33,8 +67,6 @@ namespace UnityEngine.UIElements
 
             public override void Deserialize(object obj)
             {
-                base.Deserialize(obj);
-
                 var e = (Slider)obj;
                 if (ShouldWriteAttributeValue(lowValue_UxmlAttributeFlags))
                     e.lowValue = lowValue;
@@ -48,6 +80,9 @@ namespace UnityEngine.UIElements
                     e.showInputField = showInputField;
                 if (ShouldWriteAttributeValue(inverted_UxmlAttributeFlags))
                     e.inverted = inverted;
+
+                // We need to apply the lowValue and highValue before the value to avoid incorrect clamping.
+                base.Deserialize(obj);
             }
         }
 

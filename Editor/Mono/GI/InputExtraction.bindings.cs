@@ -68,7 +68,13 @@ namespace UnityEditor.LightBaking
             }
         }
 
-        public static extern bool ExtractFromScene(string outputFolderPath, LightBaker.BakeInput input, SourceMap map);
+        public static extern bool ExtractFromScene(string outputFolderPath, LightBaker.BakeInput input, LightBaker.LightmapRequests lightmapRequests, LightBaker.LightProbeRequests lightProbeRequests, SourceMap map);
+
+        [NativeMethod(IsThreadSafe = true)]
+        public static extern int[] ComputeOcclusionLightIndicesFromBakeInput(LightBaker.BakeInput bakeInput, UnityEngine.Vector3[] probePositions, uint maxLightsPerProbe);
+
+        [NativeMethod(IsThreadSafe = true)]
+        public static extern int[] GetShadowmaskChannelsFromLightIndices(LightBaker.BakeInput bakeInput, int[] lightIndices);
 
         public static extern int[] ComputeOcclusionLightIndicesFromBakeInput(LightBaker.BakeInput bakeInput, UnityEngine.Vector3[] probePositions, uint maxLightsPerProbe);
 
@@ -106,28 +112,34 @@ namespace UnityEditor.LightBaking
                 else
                     message += $"         Instance [{i}] [{LookupGameObjectName(map, i)}]:\n";
                 LightBaker.Instance instance = bakeInput.instance((uint)i);
-                message += $"            mesh type\t\t: {instance.meshType}\n";
+                message += $"            mesh type\t\t\t: {instance.meshType}\n";
                 if (instance.meshType == LightBaker.MeshType.MeshRenderer)
-                    message += $"            mesh index\t: {instance.meshIndex}\n";
+                    message += $"            mesh index\t\t\t: {instance.meshIndex}\n";
                 else if (instance.meshType == LightBaker.MeshType.Terrain)
-                    message += $"            terrain index\t: {instance.terrainIndex}\n";
-                message += $"            transform\t\t: {instance.transform.GetRow(0)}\n";
-                message += $"                     \t\t: {instance.transform.GetRow(1)}\n";
-                message += $"                     \t\t: {instance.transform.GetRow(2)}\n";
-                message += $"                     \t\t: {instance.transform.GetRow(3)}\n";
-                message += $"            cast shadows\t: {instance.castShadows}\n";
+                    message += $"            terrain index\t\t: {instance.terrainIndex}\n";
+                message += $"            transform\t\t\t: {instance.transform.GetRow(0)}\n";
+                message += $"                     \t\t\t: {instance.transform.GetRow(1)}\n";
+                message += $"                     \t\t\t: {instance.transform.GetRow(2)}\n";
+                message += $"                     \t\t\t: {instance.transform.GetRow(3)}\n";
+                message += $"            cast shadows\t\t: {instance.castShadows}\n";
                 message += $"            receive shadows\t: {instance.receiveShadows}\n";
                 if (instance.meshType == LightBaker.MeshType.MeshRenderer)
                 {
-                    message += $"            odd negative scale\t: {instance.oddNegativeScale}\n";
-                    message += $"            lod group\t\t: {instance.lodGroup}\n";
-                    message += $"            lod mask\t\t: {instance.lodMask}\n";
+                    message += $"            odd neg scale\t\t: {instance.oddNegativeScale}\n";
+                    message += $"            lod group\t\t\t: {instance.lodGroup}\n";
+                    message += $"            lod mask\t\t\t\t: {instance.lodMask}\n";
                 }
-                message += $"            submesh count\t: {instance.submeshMaterialIndices.Length}\n";
+                message += $"            submesh count\t\t: {instance.submeshMaterialIndices.Length}\n";
                 string indices = string.Empty;
                 for (int j = 0; j < instance.submeshMaterialIndices.Length; ++j)
                     indices += instance.submeshMaterialIndices[j] + (j < (instance.submeshMaterialIndices.Length - 1) ? ", " : "");
                 message += $"            submesh mat idxs\t: {{{indices}}}\n";
+                message += $"            albedo tex idx\t\t: {bakeInput.instanceToAlbedoIndex((uint)i)}\n";
+                message += $"            emissive tex idx\t: {bakeInput.instanceToEmissiveIndex((uint)i)}\n";
+                string transmissiveIndices = string.Empty;
+                for (int j = 0; j < instance.submeshMaterialIndices.Length; ++j)
+                    transmissiveIndices += bakeInput.instanceToTransmissiveIndex((uint)i, (uint)j) + (j < (instance.submeshMaterialIndices.Length - 1) ? ", " : "");
+                message += $"            trans tex idxs\t\t: {{{transmissiveIndices}}}\n";
             }
             return message;
         }
@@ -137,13 +149,13 @@ namespace UnityEditor.LightBaking
             if (bakeInput is null)
                 return string.Empty;
             string message = string.Empty;
-            message += $"      material count\t: {bakeInput.materialCount}\n";
+            message += $"      material count\t\t: {bakeInput.materialCount}\n";
             for (int i = 0; i < bakeInput.materialCount; ++i)
             {
                 message += $"         Material [{i}]:\n";
-                message += $"            doubleSidedGI\t: {bakeInput.GetMaterial((uint)i).doubleSidedGI}\n";
+                message += $"            doubleSidedGI\t\t\t: {bakeInput.GetMaterial((uint)i).doubleSidedGI}\n";
                 message += $"            transmissionChannels\t: {bakeInput.GetMaterial((uint)i).transmissionChannels}\n";
-                message += $"            transmissionType\t: {bakeInput.GetMaterial((uint)i).transmissionType}\n";
+                message += $"            transmissionType\t\t: {bakeInput.GetMaterial((uint)i).transmissionType}\n";
             }
             return message;
         }
@@ -177,22 +189,22 @@ namespace UnityEditor.LightBaking
             {
                 LightBaker.Light light = bakeInput.GetLight((uint)i);
                 message += $"         Light [{i}]:\n";
-                message += $"            color\t\t: {light.color}\n";
-                message += $"            indirect color\t: {light.indirectColor}\n";
-                message += $"            orientation\t: {light.orientation}\n";
-                message += $"            position\t\t: {light.position}\n";
-                message += $"            range\t\t: {light.range}\n";
-                message += $"            cookie index\t: {light.cookieTextureIndex}\n";
-                message += $"            cookie scale\t: {light.cookieScale}\n";
-                message += $"            cone angle\t: {light.coneAngle}\n";
+                message += $"            color\t\t\t\t\t: {light.color}\n";
+                message += $"            indirect color\t\t: {light.indirectColor}\n";
+                message += $"            orientation\t\t\t: {light.orientation}\n";
+                message += $"            position\t\t\t\t: {light.position}\n";
+                message += $"            range\t\t\t\t\t: {light.range}\n";
+                message += $"            cookie index\t\t: {light.cookieTextureIndex}\n";
+                message += $"            cookie scale\t\t: {light.cookieScale}\n";
+                message += $"            cone angle\t\t\t: {light.coneAngle}\n";
                 message += $"            inner cone angle\t: {light.innerConeAngle}\n";
-                message += $"            shape0\t\t: {light.shape0}\n";
-                message += $"            shape1\t\t: {light.shape1}\n";
-                message += $"            type\t\t: {light.type}\n";
-                message += $"            mode\t\t: {light.mode}\n";
-                message += $"            falloff\t\t: {light.falloff}\n";
+                message += $"            shape0\t\t\t\t: {light.shape0}\n";
+                message += $"            shape1\t\t\t\t: {light.shape1}\n";
+                message += $"            type\t\t\t\t\t: {light.type}\n";
+                message += $"            mode\t\t\t\t\t: {light.mode}\n";
+                message += $"            falloff\t\t\t\t: {light.falloff}\n";
                 message += $"            angular falloff\t: {light.angularFalloff}\n";
-                message += $"            casts shadows\t: {light.castsShadows}\n";
+                message += $"            casts shadows\t\t: {light.castsShadows}\n";
                 message += $"            shadowmask chnl\t: {light.shadowMaskChannel}\n";
             }
             return message;
@@ -218,26 +230,26 @@ namespace UnityEditor.LightBaking
             message += LogSampleCounts(lightingSettings.lightmapSampleCounts);
             message += $"         lightprobe sample counts:\n";
             message += LogSampleCounts(lightingSettings.probeSampleCounts);
-            message += $"         min bounces\t: {lightingSettings.minBounces}\n";
-            message += $"         max bounces\t: {lightingSettings.maxBounces}\n";
+            message += $"         min bounces\t\t\t\t: {lightingSettings.minBounces}\n";
+            message += $"         max bounces\t\t\t\t: {lightingSettings.maxBounces}\n";
             message += $"         lightmap bake mode\t: {lightingSettings.lightmapBakeMode}\n";
             message += $"         mixed lighting mode\t: {lightingSettings.mixedLightingMode}\n";
-            message += $"         ao enabled\t\t: {lightingSettings.aoEnabled}\n";
-            message += $"         ao distance\t\t: {lightingSettings.aoDistance}\n";
+            message += $"         ao enabled\t\t\t\t: {lightingSettings.aoEnabled}\n";
+            message += $"         ao distance\t\t\t\t: {lightingSettings.aoDistance}\n";
             return message;
         }
 
-        public static string LogScene(LightBaker.BakeInput bakeInput, SourceMap map)
+        public static string LogScene(LightBaker.BakeInput bakeInput, LightBaker.LightmapRequests lightmapRequests, LightBaker.LightProbeRequests lightProbeRequests, SourceMap map)
         {
             if (bakeInput is null)
                 return string.Empty;
             string message = string.Empty;
             message += LogSceneSettings(bakeInput);
             message += LogInstances(bakeInput, map);
-            message += $"      mesh count\t\t: {bakeInput.meshCount}\n";
+            message += $"      mesh count\t\t\t: {bakeInput.meshCount}\n";
             message += $"      terrain count\t\t: {bakeInput.terrainCount}\n";
             message += $"      heightmap count\t: {bakeInput.heightmapCount}\n";
-            message += $"      holemap count\t: {bakeInput.holemapCount}\n";
+            message += $"      holemap count\t\t: {bakeInput.holemapCount}\n";
             message += LogSceneMaterials(bakeInput);
             message += $"      albedo tex count\t: {bakeInput.albedoTextureCount}\n";
             for (int i = 0; i < bakeInput.albedoTextureCount; ++i)
@@ -259,12 +271,12 @@ namespace UnityEditor.LightBaking
             }
             message += LogSceneCookies(bakeInput);
             message += LogSceneLights(bakeInput);
-            message += $"      lightmap count\t: {bakeInput.lightmapCount}\n";
-            for (int i = 0; i < bakeInput.lightmapCount; ++i)
+            message += $"      lightmap count\t: {lightmapRequests.lightmapCount}\n";
+            for (int i = 0; i < lightmapRequests.lightmapCount; ++i)
             {
                 message += $"         Lightmap [{i}]:\n";
-                message += $"            resolution\t\t: {bakeInput.lightmapResolution((uint)i).width} x {bakeInput.lightmapResolution((uint)i).height}\n";
-                message += $"            instance count\t: {bakeInput.lightmapInstanceCount((uint)i)}\n";
+                message += $"            resolution\t\t: {lightmapRequests.lightmapResolution((uint)i).width} x {lightmapRequests.lightmapResolution((uint)i).height}\n";
+                message += $"            instance count\t: {lightmapRequests.lightmapInstanceCount((uint)i)}\n";
             }
             return message;
         }

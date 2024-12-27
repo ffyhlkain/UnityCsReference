@@ -21,7 +21,7 @@ namespace UnityEditor
         [System.Obsolete("StandaloneOSXIntel has been removed in 2017.3")]
         StandaloneOSXIntel = 4,
 
-        // Build a Windows standalone.
+        // Build a 32 bit Windows standalone.
         StandaloneWindows = 5,
 
         // *undocumented*
@@ -56,7 +56,7 @@ namespace UnityEditor
         [System.Obsolete("StandaloneLinux has been removed in 2019.2")]
         StandaloneLinux = 17,
 
-        // Build a Windows x86_64 standalone.
+        // Build a Windows standalone.
         StandaloneWindows64 = 19,
 
         // *undocumented*
@@ -141,6 +141,10 @@ namespace UnityEditor
         QNX = 46,
 
         VisionOS = 47,
+        
+        ReservedCFE = 48,
+
+        Kepler = 49,
 
         // obsolete identifiers. We're using different values so that ToString() works.
         [System.Obsolete("Use iOS instead (UnityUpgradable) -> iOS", true)]

@@ -20,7 +20,18 @@ namespace UnityEditor.Build.Profile.Handlers
 
         const string k_AssetFolderPath = "Assets/Settings/Build Profiles";
 
-        static string GetNewProfileName(string displayName) => $"{k_AssetFolderPath}/{displayName}.asset";
+        static string GetDefaultNewProfilePath(string platformDisplayName, string variantName = null)
+        {
+            if (variantName == null)
+                return $"{k_AssetFolderPath}/New {SanitizeFileName(platformDisplayName)} Profile.asset";
+            return $"{k_AssetFolderPath}/New {SanitizeFileName(platformDisplayName)} Profile - {SanitizeFileName(variantName)}.asset";
+        }
+
+        static string GetDefaultNewProfilePath(GUID platformGuid)
+        {
+            var platformDisplayName = BuildProfileModuleUtil.GetClassicPlatformDisplayName(platformGuid);
+            return GetDefaultNewProfilePath(platformDisplayName);
+        }
 
         internal BuildProfileDataSource(BuildProfileWindow window)
         {
@@ -30,12 +41,14 @@ namespace UnityEditor.Build.Profile.Handlers
             m_DuplicatedProfiles = new List<BuildProfile>();
 
             BuildProfile.AddOnBuildProfileEnable(OnBuildProfileCreated);
+            BuildProfile.AddOnBuildProfileCreated(m_Window.OnBuildProfileCreated);
             BuildProfileModuleUtil.CleanUpPlayerSettingsForDeletedBuildProfiles(currentBuildProfiles: customBuildProfiles);
         }
 
         public void Dispose()
         {
             BuildProfile.RemoveOnBuildProfileEnable(OnBuildProfileCreated);
+            BuildProfile.RemoveOnBuildProfileCreated(m_Window.OnBuildProfileCreated);
         }
 
         /// <summary>
@@ -50,8 +63,8 @@ namespace UnityEditor.Build.Profile.Handlers
                 if (obj != null)
                     continue;
 
-                if (BuildProfileContext.instance.activeProfile == obj)
-                    BuildProfileContext.instance.activeProfile = null;
+                if (BuildProfileContext.activeProfile == obj)
+                    BuildProfileContext.activeProfile = null;
 
                 customBuildProfiles.RemoveAt(i);
                 changed = true;
@@ -86,14 +99,13 @@ namespace UnityEditor.Build.Profile.Handlers
         }
 
         /// <summary>
-        /// Create a custom build profile asset, making sure to create the folders
-        /// if needed
+        /// Create a new custom build profile asset with the default name.
+        /// Ensure that custom build profile folders is created if it doesn't already exist.
         /// </summary>
-        internal static void CreateAsset(string platformId, string displayName)
+        internal static void CreateNewAsset(GUID platformId, string platformDisplayName, string preconfiguredSettingsVariantName, int preconfiguredSettingsVariant, string[] packagesToAdd)
         {
-            CheckCreateCustomBuildProfileFolders();
-
-            BuildProfile.CreateInstance(platformId, GetNewProfileName(displayName));
+            EnsureCustomBuildProfileFolderExists();
+            BuildProfile.CreateInstance(platformId, GetDefaultNewProfilePath(platformDisplayName, preconfiguredSettingsVariantName), preconfiguredSettingsVariant, packagesToAdd);
         }
 
         /// <summary>
@@ -105,28 +117,35 @@ namespace UnityEditor.Build.Profile.Handlers
             if (buildProfile == null)
                 return null;
 
-            string path = isClassic ? GetDuplicatedBuildProfilePathForClassic(buildProfile) : AssetDatabase.GetAssetPath(buildProfile);
+            string path = isClassic ? GetDefaultNewProfilePath(buildProfile.platformGuid) : AssetDatabase.GetAssetPath(buildProfile);
             if (string.IsNullOrEmpty(path))
                 return null;
 
-            BuildProfile duplicatedProfile = UnityEngine.Object.Instantiate(buildProfile);
+            BuildProfile duplicatedProfile = buildProfile.Duplicate();
 
             // If it's a classic profile we need to copy the scenes from the editor build settings
             // since classic profiles share scenes
             if (isClassic)
                 duplicatedProfile.scenes = EditorBuildSettings.GetEditorBuildSettingsSceneIgnoreProfile();
 
-            CheckCreateCustomBuildProfileFolders();
+            EnsureCustomBuildProfileFolderExists();
 
             string uniqueFilePath = AssetDatabase.GenerateUniqueAssetPath(path);
             AssetDatabase.CreateAsset(duplicatedProfile, uniqueFilePath);
+
+            if (duplicatedProfile.graphicsSettings != null)
+                AssetDatabase.AddObjectToAsset(duplicatedProfile.graphicsSettings, duplicatedProfile);
+
+            if (buildProfile.qualitySettings != null)
+                AssetDatabase.AddObjectToAsset(duplicatedProfile.qualitySettings, duplicatedProfile);
+
             EditorAnalytics.SendAnalytic(new BuildProfileCreatedEvent(new BuildProfileCreatedEvent.Payload
             {
                 creationType = (isClassic)
                     ? BuildProfileCreatedEvent.CreationType.DuplicateClassic
                     : BuildProfileCreatedEvent.CreationType.DuplicateProfile,
-                platformId = duplicatedProfile.platformId,
-                platformDisplayName = BuildProfileModuleUtil.GetClassicPlatformDisplayName(duplicatedProfile.platformId),
+                platformId = duplicatedProfile.platformGuid,
+                platformDisplayName = BuildProfileModuleUtil.GetClassicPlatformDisplayName(duplicatedProfile.platformGuid),
             }));
 
             return duplicatedProfile;
@@ -178,10 +197,10 @@ namespace UnityEditor.Build.Profile.Handlers
         /// build profile list. The build profile will be re-added when it
         /// gets enabled after renaming.
         /// </summary>
-        internal void RenameAsset(BuildProfile buildProfile, string newName)
+        internal bool RenameAsset(BuildProfile buildProfile, string newName)
         {
             if (buildProfile?.name == newName || string.IsNullOrEmpty(newName))
-                return;
+                return false;
 
             var originalPath = AssetDatabase.GetAssetPath(buildProfile);
             var newPath = ReplaceFileNameInPath(originalPath, newName);
@@ -196,7 +215,10 @@ namespace UnityEditor.Build.Profile.Handlers
                 customBuildProfiles.Remove(buildProfile);
                 m_Window.RebuildProfileListViews();
                 AssetDatabase.RenameAsset(originalPath, finalName);
+                return true;
             }
+
+            return false;
         }
 
         /// <summary>
@@ -220,7 +242,7 @@ namespace UnityEditor.Build.Profile.Handlers
         void OnBuildProfileCreated(BuildProfile profile)
         {
             // Only track profiles stored in the assets folder.
-            if (profile.buildTarget == BuildTarget.NoTarget || string.IsNullOrEmpty(profile.name))
+            if (profile.platformGuid.Empty() || string.IsNullOrEmpty(profile.name))
                 return;
 
             if (BuildProfileContext.IsClassicPlatformProfile(profile))
@@ -268,30 +290,9 @@ namespace UnityEditor.Build.Profile.Handlers
 
         static List<BuildProfile> FindAllBuildProfiles()
         {
-            const string buildProfileAssetSearchString = $"t:{nameof(BuildProfile)}";
-            var assetsGuids = AssetDatabase.FindAssets(buildProfileAssetSearchString);
-            var result = new List<BuildProfile>(assetsGuids.Length);
-
-            // Suppress missing type warning thrown by serialization. This could happen
-            // when the build profile window is opened, then entering play mode and the
-            // module for that profile is not installed.
-            BuildProfileModuleUtil.SuppressMissingTypeWarning();
-
-            foreach (var guid in assetsGuids)
-            {
-                string path = AssetDatabase.GUIDToAssetPath(guid);
-                BuildProfile profile = AssetDatabase.LoadAssetAtPath<BuildProfile>(path);
-                if (profile == null)
-                {
-                    Debug.LogWarning($"[BuildProfile] Failed to load asset at path: {path}");
-                    continue;
-                }
-
-                result.Add(profile);
-            }
-
-            result.Sort((lhs, rhs) => EditorUtility.NaturalCompare(lhs.name, rhs.name));
-            return result;
+            var profiles = BuildProfileModuleUtil.GetAllBuildProfiles();
+            profiles.Sort((lhs, rhs) => EditorUtility.NaturalCompare(lhs.name, rhs.name));
+            return profiles;
         }
 
         static string ReplaceFileNameInPath(string originalPath, string newName)
@@ -301,13 +302,18 @@ namespace UnityEditor.Build.Profile.Handlers
             return Path.Combine(directory, $"{newName}{extension}");
         }
 
-        static string GetDuplicatedBuildProfilePathForClassic(BuildProfile buildProfile)
+        static string SanitizeFileName(string name)
         {
-            string name = BuildProfileModuleUtil.GetClassicPlatformDisplayName(buildProfile.platformId);
-            return Path.Combine(k_AssetFolderPath, $"{name}.asset");
+            var invalidChars = Path.GetInvalidFileNameChars();
+            if (name.IndexOfAny(invalidChars) == -1)
+                return name;
+
+            foreach (char c in invalidChars)
+                name = name.Replace(c.ToString(), string.Empty);
+            return name;
         }
 
-        static void CheckCreateCustomBuildProfileFolders()
+        static void EnsureCustomBuildProfileFolderExists()
         {
             if (!AssetDatabase.IsValidFolder("Assets/Settings"))
                 AssetDatabase.CreateFolder("Assets", "Settings");

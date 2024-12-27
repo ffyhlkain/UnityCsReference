@@ -23,6 +23,7 @@ using PreviewMaterialType = UnityEditor.EditorGUIUtility.PreviewType;
 using System.Linq;
 using System.Reflection;
 using Unity.Profiling;
+using UnityEditor.Rendering;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.UIElements;
 using UnityEditor.UIElements;
@@ -37,9 +38,12 @@ namespace UnityEditor
     {
         private static RecycledTextEditor activeEditor;
 
-        internal static DelayedTextEditor s_DelayedTextEditor = new DelayedTextEditor();
+        internal static DelayedTextEditor s_DelayedTextEditorInternal;
+        internal static DelayedTextEditor s_DelayedTextEditor => s_DelayedTextEditorInternal ??= new();
 
-        internal static RecycledTextEditor s_RecycledEditor = new RecycledTextEditor();
+        internal static RecycledTextEditor s_RecycledEditorInternal;
+        internal static RecycledTextEditor s_RecycledEditor => s_RecycledEditorInternal ??= new();
+
         internal static string s_OriginalText = "";
         internal static string s_RecycledCurrentEditingString;
         private static bool bKeyEventActive = false;
@@ -504,6 +508,7 @@ namespace UnityEditor
         internal class RecycledTextEditor : TextEditor
         {
             internal static bool s_ActuallyEditing = false; // internal so we can save this state.
+            internal static bool s_EditingWasCompleted = false; // internal so we can save this state.
             internal static bool s_AllowContextCutOrPaste = true; // e.g. selectable labels only allow for copying
             private long[] s_OriginalLongValues;
             private double[] s_OriginalDoubleValues;
@@ -581,6 +586,7 @@ namespace UnityEditor
 
                 controlID = 0;
                 s_ActuallyEditing = false;
+                s_EditingWasCompleted = false;
                 s_AllowContextCutOrPaste = true;
                 UnityEditor.Undo.IncrementCurrentGroup();
 
@@ -1018,8 +1024,8 @@ namespace UnityEditor
                 }
             }
 
-            // Inform editor that someone removed focus from us.
-            if (editor.controlID == id && GUIUtility.keyboardControl != id || (evt.type == EventType.ValidateCommand && evt.commandName == EventCommandNames.UndoRedoPerformed))
+            // Inform editor that someone removed focus from us or a rename operation was completed.
+            if (editor.controlID == id && GUIUtility.keyboardControl != id || EditorGUIUtility.renameWasCompleted || (evt.type == EventType.ValidateCommand && evt.commandName == EventCommandNames.UndoRedoPerformed))
             {
                 editor.EndEditing();
             }
@@ -3340,6 +3346,7 @@ namespace UnityEditor
                 newSelectedIndices.Add(previousSelectedIndices[i] + 1);
             }
 
+            newSelectedIndices.Sort();
             baseListView.SetSelection(newSelectedIndices);
         }
 
@@ -5635,7 +5642,7 @@ namespace UnityEditor
                         ColorPicker.Show(GUIView.current, value, showAlpha, hdr);
                         GUIUtility.ExitGUI();
                     }
-                    else if (evt.modifiers == EventModifiers.Control)
+                    else if (evt.modifiers == EventModifiers.Control && GUIUtility.keyboardControl == id)
                     {
                         if (evt.keyCode == KeyCode.C)
                         {
@@ -6478,7 +6485,7 @@ namespace UnityEditor
                     // in the Inspector has different values. Don't show it when expanded, since the difference will be visible further down.
                     if (showMixedValue && !foldout)
                     {
-                        style.Draw(drawRect, content, id, false);
+                        style.Draw(drawRect, content, id, false, false);
 
                         BeginHandleMixedValueContentColor();
                         Rect fieldPosition = origPosition;
@@ -6488,7 +6495,7 @@ namespace UnityEditor
                     }
                     else
                     {
-                        style.Draw(drawRect, content, id, foldout);
+                        style.Draw(drawRect, content, id, foldout, false);
                     }
                     break;
                 case EventType.KeyDown:

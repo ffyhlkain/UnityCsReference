@@ -5,6 +5,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor.Build;
+using UnityEditor.Build.Profile;
 using UnityEditor.Modules;
 using UnityEditorInternal;
 using UnityEngine;
@@ -96,6 +97,10 @@ namespace UnityEditor
             public static readonly GUIContent kTerrainMaxTrees = EditorGUIUtility.TrTextContent("Max Mesh Trees", "Value set to Terrain max mesh trees (See Terrain settings)");
 
             public static readonly GUIContent kRenderPipelineObject = EditorGUIUtility.TrTextContent("Render Pipeline Asset", "Specifies the Render Pipeline Asset to use for this quality level. It overrides the value set in the Graphics Settings Window.");
+
+            public static readonly string buildProfileQualitySettingsOverrideWarning = L10n.Tr("The current active build profile has overridden Quality levels inclusion. To ensure that the correct levels are included in your build, see the Build Profiles...");
+            public static readonly string buildProfileQualitySettingsInformationSingular = L10n.Tr("Renaming and deleting Quality levels will impact one build profile. To edit Quality levels included in build profiles, go to Build Profiles...");
+            public static readonly string buildProfileQualitySettingsInformationPlural = L10n.Tr("Renaming and deleting Quality levels will impact {0} build profiles. To edit Quality levels included in build profiles, go to Build Profiles...");
         }
 
         private class Styles
@@ -145,6 +150,12 @@ namespace UnityEditor
         private Presets.Preset m_QualitySettingsPreset;
 
         IAdaptiveVsyncSetting[] m_AdaptiveVsyncSettings;
+        bool m_AdaptiveVSyncVisible;
+
+        bool m_QualityLevelRenameJustStarted = true;
+        bool m_QualityLevelNeedsRenameInAllProfiles = false;
+        string m_OriginalQualityLevelName = string.Empty;
+        string m_NewQualityLevelName = string.Empty;
 
         public void OnEnable()
         {
@@ -170,6 +181,13 @@ namespace UnityEditor
                 string module = ModuleManager.GetTargetStringFromBuildTargetGroup(validPlatforms[i].namedBuildTarget.ToBuildTargetGroup());
                 m_AdaptiveVsyncSettings[i] = ModuleManager.GetAdaptiveSettingEditorExtension(module);
             }
+
+            ResetQualityLevelRenameTracking();
+        }
+
+        public void OnDestroy()
+        {
+            ResolvePendingQualityLevelRename();
         }
 
         private struct QualitySetting
@@ -195,15 +213,40 @@ namespace UnityEditor
             GUILayout.BeginVertical();
             var selectedLevel = currentQualitylevel;
 
+            //calculate maximum height
+            var max_height = 0.0f;
+            var min_height = float.MaxValue;
+            foreach (var platform in m_ValidPlatforms)
+            {
+                var icon = platform.compoundSmallIconForQualitySettings;
+                max_height = System.Math.Max(icon.height/icon.pixelsPerPoint + 2, max_height);
+                min_height = System.Math.Min(icon.height/icon.pixelsPerPoint + 2, min_height);
+            }
+
             //Header row
             GUILayout.BeginHorizontal();
-            EditorGUILayout.PrefixLabel("Levels", EditorStyles.label, EditorStyles.boldLabel);
+            {
+                var followingStyle = EditorStyles.label;
+                var labelStyle = EditorStyles.boldLabel;
+                float p = followingStyle.margin.left;
+                var label = EditorGUIUtility.TempContent("Levels");
+                Rect r = GUILayoutUtility.GetRect(EditorGUIUtility.labelWidth - p, EditorGUI.kSingleLineHeight, followingStyle, GUILayout.ExpandWidth(false));
+                var delta = max_height - min_height;
+                r.yMax += delta;
+                r.yMin += delta;
+                r.xMin += EditorGUI.indent;
+                EditorGUI.HandlePrefixLabel(r, r, label, 0, labelStyle);
+            }
 
             //Header row icons
             foreach (var platform in m_ValidPlatforms)
             {
-                var iconRect = GUILayoutUtility.GetRect(GUIContent.none, Styles.kToggle, GUILayout.MinWidth(Styles.kMinToggleWidth), GUILayout.MaxWidth(Styles.kMaxToggleWidth), GUILayout.Height(Styles.kHeaderRowHeight));
-                var temp = EditorGUIUtility.TempContent(platform.smallIcon);
+                var icon = platform.compoundSmallIconForQualitySettings;
+                var iconRect = GUILayoutUtility.GetRect(GUIContent.none, Styles.kToggle, GUILayout.MinWidth(Styles.kMinToggleWidth), GUILayout.MaxWidth(Styles.kMaxToggleWidth), GUILayout.Height(icon.height/icon.pixelsPerPoint + 2));
+                var delta = max_height - icon.height/icon.pixelsPerPoint-2;
+                iconRect.yMax += delta;
+                iconRect.yMin += delta;
+                var temp = EditorGUIUtility.TempContent(icon);
                 temp.tooltip = platform.title.text;
                 GUI.Label(iconRect, temp);
                 temp.tooltip = "";
@@ -308,7 +351,9 @@ namespace UnityEditor
                 if (Event.current.type == EventType.Repaint)
                     bgStyle.Draw(deleteButton, GUIContent.none, false, false, selected, false);
                 if (GUI.Button(deleteButton, Content.kIconTrash, GUIStyle.none))
+                {
                     m_DeleteLevel = i;
+                }
 
                 GUILayout.EndHorizontal();
             }
@@ -418,7 +463,9 @@ namespace UnityEditor
                 //Always ensure there is one quality setting
                 if (m_QualitySettingsProperty.arraySize > 1 && m_DeleteLevel >= 0 && m_DeleteLevel < m_QualitySettingsProperty.arraySize)
                 {
+                    var deleteLevelName = m_QualitySettingsProperty.GetArrayElementAtIndex(m_DeleteLevel).FindPropertyRelative("name")?.stringValue;
                     m_QualitySettingsProperty.DeleteArrayElementAtIndex(m_DeleteLevel);
+                    BuildProfileModuleUtil.RemoveQualityLevelFromAllProfiles(deleteLevelName);
 
                     // Fix defaults offset
                     List<string> keys = new List<string>(platformDefaults.Keys);
@@ -515,14 +562,7 @@ namespace UnityEditor
             if (PlayerSettings.mipStripping)
                 return;
 
-            EditorGUILayout.Space(-20f); // Move back towards the mipmap limit groups UI.
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                float marginRight = Presets.Preset.IsEditorTargetAPreset(target) ? 67f : 64f;
-                EditorGUILayout.HelpBox(Content.kMipStrippingHint.text, MessageType.Info, false);
-                EditorGUILayout.GetControlRect(false, GUILayoutUtility.GetLastRect().height, GUILayout.Width(marginRight));
-                // Limit the width of the HelpBox in order to avoid clipping into the mipmap limit groups UI.
-            }
+            EditorGUILayout.HelpBox(Content.kMipStrippingHint.text, MessageType.Info);
         }
 
         /**
@@ -603,6 +643,49 @@ namespace UnityEditor
             }
         }
 
+        private void ResetQualityLevelRenameTracking()
+        {
+            m_QualityLevelRenameJustStarted = true;
+            m_QualityLevelNeedsRenameInAllProfiles = false;
+            m_OriginalQualityLevelName = string.Empty;
+            m_NewQualityLevelName = string.Empty;
+        }
+
+        // We defer the actual renaming in all build profiles because renaming them with every keystroke is
+        // prohibitively slow. As a result, we perform the rename when the quality level selection changes,
+        // when the user selects a different control, and when the inspector window is closed or loses focus.
+        private void ResolvePendingQualityLevelRename()
+        {
+            if (m_QualityLevelNeedsRenameInAllProfiles)
+            {
+                if (m_OriginalQualityLevelName != m_NewQualityLevelName)
+                {
+                    BuildProfileModuleUtil.RenameQualityLevelInAllProfiles(m_OriginalQualityLevelName, m_NewQualityLevelName);
+                }
+            }
+            ResetQualityLevelRenameTracking();
+        }
+
+        private void ShowAffectedBuildProfileInformation()
+        {
+            var buildProfiles = BuildProfileModuleUtil.GetAllBuildProfiles();
+            var profilesWithQualityLevelOverrides = 0;
+            foreach (var profile in buildProfiles)
+            {
+                if (profile.qualitySettings != null)
+                {
+                    profilesWithQualityLevelOverrides++;
+                }
+            }
+            if (profilesWithQualityLevelOverrides > 0)
+            {
+                if (profilesWithQualityLevelOverrides == 1)
+                    EditorGUILayout.HelpBox(string.Format(Content.buildProfileQualitySettingsInformationSingular), MessageType.Info);
+                else
+                    EditorGUILayout.HelpBox(string.Format(Content.buildProfileQualitySettingsInformationPlural, profilesWithQualityLevelOverrides), MessageType.Info);
+            }
+        }
+
         public override void OnInspectorGUI()
         {
             if (EditorApplication.isPlayingOrWillChangePlaymode)
@@ -628,7 +711,10 @@ namespace UnityEditor
             SetQualitySettings(settings);
             HandleAddRemoveQualitySetting(ref selectedLevel, defaults);
             SetDefaultQualityForPlatforms(defaults);
+
             GUILayout.Space(10.0f);
+            ShowAffectedBuildProfileInformation();
+
             DrawHorizontalDivider();
             GUILayout.Space(10.0f);
 
@@ -687,10 +773,41 @@ namespace UnityEditor
                 nameProperty.stringValue = "Level " + selectedLevel;
 
             GUILayout.Label(EditorGUIUtility.TempContent("Current Build Target: " + Modules.ModuleManager.GetTargetStringFromBuildTarget(EditorUserBuildSettings.activeBuildTarget)), EditorStyles.boldLabel);
-            EditorGUILayout.HelpBox("The settings below are only applicable to the current build target. To change the Build Target, go to Build Settings", MessageType.Info);
+            if (BuildProfileContext.ActiveProfileHasQualitySettings())
+            {
+                EditorGUILayout.HelpBox(Content.buildProfileQualitySettingsOverrideWarning, MessageType.Warning, true);
+            }
+            if (m_AdaptiveVSyncVisible)
+                EditorGUILayout.HelpBox("There are settings below that are only applicable to the current Build Target such as Adaptive Vsync. To change the Build Target, go to the Build Settings", MessageType.Info);
             GUILayout.Label(EditorGUIUtility.TempContent("Current Active Quality Level"), EditorStyles.boldLabel);
 
+            const string QualityLevelNamePropertyControlName = "QualityLevelNamePropertyControl";
+            var previousName = nameProperty.stringValue;
+            EditorGUI.BeginChangeCheck();
+            GUI.SetNextControlName(QualityLevelNamePropertyControlName);
             EditorGUILayout.PropertyField(nameProperty);
+            var qualityLevelNameControlChanged = EditorGUI.EndChangeCheck();
+            var qualityLevelNameControlIsFocused = GUI.GetNameOfFocusedControl() == QualityLevelNamePropertyControlName;
+            var inspectorIsFocused = EditorWindow.focusedWindow is ProjectSettingsWindow;
+            if (qualityLevelNameControlChanged)
+            {
+                if (m_QualityLevelRenameJustStarted)
+                {
+                    m_OriginalQualityLevelName = previousName;
+                    m_QualityLevelRenameJustStarted = false;
+                }
+
+                m_QualityLevelNeedsRenameInAllProfiles = true;
+
+                if (string.IsNullOrEmpty(nameProperty.stringValue))
+                    nameProperty.stringValue = "Level " + selectedLevel;
+
+                m_NewQualityLevelName = nameProperty.stringValue;
+            }
+            if (m_QualityLevelNeedsRenameInAllProfiles && !(qualityLevelNameControlIsFocused && inspectorIsFocused))
+            {
+                ResolvePendingQualityLevelRename();
+            }
 
             if (usingSRP)
                 EditorGUILayout.HelpBox("A Scriptable Render Pipeline is in use, some settings will not be used and are hidden", MessageType.Info);
@@ -715,6 +832,9 @@ namespace UnityEditor
                 EditorGUILayout.PropertyField(realtimeReflectionProbes);
             EditorGUILayout.PropertyField(resolutionScalingFixedDPIFactorProperty);
 
+            if (usingSRP)
+                EditorGUILayout.PropertyField(realtimeGICPUUsageProperty, Content.kRealtimeLGiCpuUsageLabel);
+
             EditorGUILayout.PropertyField(vSyncCountProperty, Content.kVSyncCountLabel);
 
             if (BuildTargetDiscovery.TryGetBuildTarget(EditorUserBuildSettings.activeBuildTarget, out var iBuildTarget))
@@ -723,51 +843,43 @@ namespace UnityEditor
                     EditorGUILayout.HelpBox(EditorGUIUtility.TrTextContent($"VSync Count '{vSyncCountProperty.enumLocalizedDisplayNames[vSyncCountProperty.enumValueIndex]}' is ignored on {iBuildTarget.DisplayName}.", EditorGUIUtility.GetHelpIcon(MessageType.Warning)));
             }
 
-            if (usingSRP)
-                EditorGUILayout.PropertyField(realtimeGICPUUsageProperty, Content.kRealtimeLGiCpuUsageLabel);
-
-            bool externalUI = false;
-            if (vSyncCountProperty.intValue > 0)
+            m_AdaptiveVSyncVisible = false;
+            var externalUI = false;
+            switch (vSyncCountProperty.intValue)
             {
-                EditorGUILayout.BeginVertical();
-                using (new EditorGUI.IndentLevelScope())
+                case > 0:
                 {
-                    using (new EditorGUI.DisabledScope(vSyncCountProperty.intValue == 0))
-                    {
-                        var validPlatforms = m_ValidPlatforms.ToArray();
-                        for (int i = 0; i < validPlatforms.Length; i++)
-                        {
-                            if (validPlatforms[i].defaultTarget == EditorUserBuildSettings.activeBuildTarget)
-                            {
-                                if (m_AdaptiveVsyncSettings[i] != null)
-                                {
-                                    m_AdaptiveVsyncSettings[i].AdaptiveVsyncUI(currentSettings);
-                                    externalUI = true;
-                                    break;
-                                }
-                            }
-                        }
-                        if (!externalUI)
-                        {
-                            GraphicsDeviceType[] gfxTypes = PlayerSettings.GetGraphicsAPIs(EditorUserBuildSettings.activeBuildTarget);
-                            for (int i = 0;i < gfxTypes.Length; i++)
-                            {
-                                if (adaptiveVsyncProperty != null && gfxTypes[i] == GraphicsDeviceType.Vulkan)
-                                {
-                                    EditorGUILayout.PropertyField(adaptiveVsyncProperty);
-                                    EditorGUILayout.HelpBox("If Adaptive Vsync extension is available at runtime with Vulkan it will use this, else fallback to vsync.", MessageType.Info);
-                                }
+                    using var vertical = new EditorGUILayout.VerticalScope();
+                    using var scope = new EditorGUI.IndentLevelScope();
+                    using var disabledScope = new EditorGUI.DisabledScope(vSyncCountProperty.intValue == 0);
 
-                            }
+                    var validPlatforms = m_ValidPlatforms.ToArray();
+                    for (int i = 0; i < validPlatforms.Length; i++)
+                    {
+                        if (validPlatforms[i].defaultTarget != EditorUserBuildSettings.activeBuildTarget || m_AdaptiveVsyncSettings[i] == null)
+                            continue;
+                        m_AdaptiveVsyncSettings[i].AdaptiveVsyncUI(currentSettings);
+                        m_AdaptiveVSyncVisible = true;
+                        externalUI = true;
+                        break;
+                    }
+                    if (!externalUI)
+                    {
+                        var gfxTypes = PlayerSettings.GetGraphicsAPIs(EditorUserBuildSettings.activeBuildTarget);
+                        for (int i = 0;i < gfxTypes.Length; i++)
+                        {
+                            if (adaptiveVsyncProperty == null || gfxTypes[i] != GraphicsDeviceType.Vulkan)
+                                continue;
+                            EditorGUILayout.PropertyField(adaptiveVsyncProperty);
+                            EditorGUILayout.HelpBox("If Adaptive Vsync extension is available at runtime with Vulkan it will use this, else fallback to vsync.", MessageType.Info);
+                            m_AdaptiveVSyncVisible = true;
                         }
                     }
+                    break;
                 }
-                EditorGUILayout.EndVertical();
-            }
-
-            if (vSyncCountProperty.intValue == 0)
-            {
-                adaptiveVsyncProperty.boolValue = false;
+                case 0:
+                    adaptiveVsyncProperty.boolValue = false;
+                    break;
             }
 
             bool shadowMaskSupported = SupportedRenderingFeatures.IsMixedLightingModeSupported(MixedLightingMode.Shadowmask);
@@ -784,12 +896,9 @@ namespace UnityEditor
             }
 
             EditorGUILayout.Space(3);
-            m_TextureMipmapLimitGroupsList.DoLayoutList();
             if (QualitySettings.IsTextureResReducedOnAnyPlatform())
-            {
                 MipStrippingHintGUI();
-            }
-
+            m_TextureMipmapLimitGroupsList.DoLayoutList();
             EditorGUILayout.PropertyField(anisotropicTexturesProperty);
 
             var streamingMipmapsActiveProperty = currentSettings.FindPropertyRelative("streamingMipmapsActive");

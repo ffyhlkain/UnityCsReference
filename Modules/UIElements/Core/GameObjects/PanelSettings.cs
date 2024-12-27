@@ -60,6 +60,14 @@ namespace UnityEngine.UIElements
     /// Defines a Panel Settings asset that instantiates a panel at runtime. The panel makes it possible for Unity to display
     /// UXML-file based UI in the Game view.
     /// </summary>
+    /// <remarks>
+    /// The UIDocument component contains a reference to a PanelSettings object.
+    /// The PanelSettings contains the rendering settings for the UI, including the scale mode and the sort order.
+    /// Multiple UIDocument components can point to the same PanelSettings object, which optimizes performance when
+    /// using multiple UI screens in the same scene.
+    ///\\
+    /// For more information on the different properties of the PanelSettings object, refer to [[wiki:UIE-Runtime-Panel-Settings|Panel Settings properties reference]].
+    /// </remarks>
     [HelpURL("UIE-Runtime-Panel-Settings")]
     public class PanelSettings : ScriptableObject
     {
@@ -199,6 +207,9 @@ namespace UnityEngine.UIElements
         }
 
         [SerializeField]
+        private bool m_DisableNoThemeWarning = false;
+
+        [SerializeField]
         private RenderTexture m_TargetTexture;
 
         /// <summary>
@@ -309,10 +320,10 @@ namespace UnityEngine.UIElements
         /// The DPI that the UI is designed for.
         /// </summary>
         /// <remarks>
-        /// When <see cref="scaleMode"/> is set to <c>ConstantPhysicalSize</c>, Unity compares
+        /// When <see cref="PanelSettings.scaleMode"/> is set to <c>ConstantPhysicalSize</c>, Unity compares
         /// this value to the actual screen DPI, and scales the UI accordingly in the Game view.
         ///
-        /// If Unity cannot determine the screen DPI, it uses the <see cref="fallbackDpi"/> instead.
+        /// If Unity cannot determine the screen DPI, it uses the <see cref="PanelSettings.fallbackDpi"/> instead.
         /// </remarks>
         public float referenceDpi
         {
@@ -443,6 +454,28 @@ namespace UnityEngine.UIElements
         /// <summary>
         /// Determines whether the depth/stencil buffer is cleared before the panel is rendered.
         /// </summary>
+        /// <remarks>
+        /// Only the first panel (according to the sorting order) must clear the depth/stencil buffer.
+        /// Subsequent panels should not clear it. Unnecessary clearing can significantly degrade performance.
+        ///\\
+        ///\\
+        /// UI Toolkit uses the depth/stencil buffer to perform masking operations, refer to [[Overflow.Hidden]] for more inforamtion.
+        /// The renderer strategically positions masking shapes to intentionally fail the depth test.
+        /// This failure triggers efficient push/pop operations within the stencil buffer, enabling effective masking. 
+        ///\\ 
+        /// To ensure this process functions correctly, the depth buffer values
+        /// must be within a predetermined range. When UI Toolkit clears the depth buffer, it leaves
+        /// a gap (controlled by [[PanelSettings.depthClearValue]]) where masks can be positioned to fail
+        /// the test. Additionally, UI Toolkit clears the stencil because the bits are used to store data
+        /// representing the stack of masking shapes.
+        ///\\
+        ///\\
+        /// An incorrect depth/stencil buffer clearing can cause malfunctions with the masking system. Such
+        /// as:
+        ///- Masking shapes might become visible
+        ///- Normal meshes might become invisible
+        ///- Complete masking failure
+        /// </remarks>
         public bool clearDepthStencil
         {
             get => m_ClearDepthStencil;
@@ -463,6 +496,10 @@ namespace UnityEngine.UIElements
         /// <summary>
         /// Determines whether the color buffer is cleared before the panel is rendered.
         /// </summary>
+        /// <remarks>
+        /// This is typically used when a RenderTexture is assigned to [[PanelSettings.targetTexture]].
+        /// Otherwise, if a camera already clears the color of the render target, avoid redundant clearing to optimize performance.
+        /// </remarks>
         public bool clearColor
         {
             get => m_ClearColor;
@@ -579,6 +616,27 @@ namespace UnityEngine.UIElements
         internal TextAsset m_ICUDataAsset;
 
         /// <summary>
+        /// Forces the UI shader to output colors in the gamma color space.
+        /// </summary>
+        /// <remarks>
+        /// This is only applicable when the project is in linear color space and when the panel is being rendered into
+        /// a Render Texture with a compatible format (e.g. R8G8B8A8_UNORM). It has no effect when the project color
+        /// space is set to gamma.
+        ///
+        /// You can use this feature to combine the SRGB Render Texture from your camera with the UNORM Render Texture of the UI.
+        /// In an on-screen UI panel, use an ImmediateModeElement to draw a full-screen quad with a custom shader that blends both.
+        ///\\
+        ///\\
+        /// Additional notes:
+        ///
+        ///- Render Texture read/write operations require additional bandwidth. This could negatively impact performance.
+        ///- When a texture is sampled in the fragment shader, the shader will perform a linear-to-gamma color space conversion on the RGB channels. This could negatively impact performance.
+        ///- When sampling from a texture, the interpolation between texels or mip levels is still performed in linear color space. This might lead to some visual differences between this mode and the same UI in a gamma project.
+        /// </remarks>
+        [SerializeField]
+        public bool forceGammaRendering;
+
+        /// <summary>
         /// Specifies a <see cref="PanelTextSettings"/> that will be used by every UI Document attached to the panel.
         /// </summary>
         [SerializeField]
@@ -613,7 +671,7 @@ namespace UnityEngine.UIElements
 
         private void OnEnable()
         {
-            if (themeUss == null)
+            if (!m_DisableNoThemeWarning && themeUss == null)
             {
                 // In the Editor, we only want this to run when in play mode, because otherwise users may get a false
                 // alarm when the project is loading and the theme asset is not yet loaded. By keeping it here, we can
@@ -654,13 +712,13 @@ namespace UnityEngine.UIElements
         ///
         /// As this is called at every change marked on any visual element of the panel, the overhead is not negligible.
         /// The callback will not be called in release builds as the method is stripped.
-        /// </remarks>
-        /// <example>
+        ///
         /// The following example uses the panelChangeReceiver in a game.
         /// To test it, add the component to a GameObject and the Panel Setting asset linked in the component fields.
-        /// <code source="../../../../Modules/UIElements/Tests/UIElementsExamples/Assets/Examples/ChangeLogger.cs"/>
-        /// </example
-        ///
+        /// </remarks>
+        /// <example nocheck="true">
+        /// <code lang="cs"><![CDATA[{code Modules/UIElements/Tests/UIElementsExamples/Assets/Examples/ChangeLogger.cs}]]></code>
+        /// </example>
         [Conditional("ENABLE_PROFILER")]
         public void SetPanelChangeReceiver(IDebugPanelChangeReceiver value)
         {
@@ -703,14 +761,11 @@ namespace UnityEngine.UIElements
             m_OldThemeUss = themeUss;
         }
 
-        bool AssignICUData()
+        internal bool AssignICUData()
         {
-            if (m_ICUDataAsset == null)
-            {
-                s_AssignICUData?.Invoke(this);
-                return true;
-            }
-            return false;
+            var old = m_ICUDataAsset;
+            s_AssignICUData?.Invoke(this);
+            return old != m_ICUDataAsset;
         }
 
         void InitializeShaders()
@@ -757,6 +812,8 @@ namespace UnityEngine.UIElements
                     visualTree.style.width = m_TargetRect.width * m_ResolvedScale;
                     visualTree.style.height = m_TargetRect.height * m_ResolvedScale;
                 }
+
+                p.panelRenderer.forceGammaRendering = targetTexture != null && forceGammaRendering;
             }
 
             p.targetTexture = targetTexture;
@@ -767,7 +824,7 @@ namespace UnityEngine.UIElements
             p.worldSpaceLayer = worldSpaceLayer;
             p.clearSettings = new PanelClearSettings {clearColor = m_ClearColor, clearDepthStencil = m_ClearDepthStencil, color = m_ColorClearValue};
             p.referenceSpritePixelsPerUnit = referenceSpritePixelsPerUnit;
-            p.vertexBudget = m_VertexBudget;
+            p.panelRenderer.vertexBudget = m_VertexBudget;
             p.dataBindingManager.logLevel = m_BindingLogLevel;
 
             var atlas = p.atlas as DynamicAtlas;
@@ -785,17 +842,13 @@ namespace UnityEngine.UIElements
         /// Sets the function that handles the transformation from screen space to panel space. For overlay panels,
         /// this function returns the input value.
         /// </summary>
-        ///
-        /// <param name="screentoPanelSpaceFunction">The translation function. Set to null to revert to the default behavior.</param>
         /// <remarks>
         /// If the panel's targetTexture is applied to 3D objects, one approach is to use a function that raycasts against
         /// MeshColliders in the Scene. The function can first check whether the GameObject that the ray hits has a
         /// MeshRenderer with a shader that uses this panel's target texture. It can then return the transformed
-        /// <c>RaycastHit.textureCoord</c> in the texture's pixel space.
-        ///
-        /// For an example of UI displayed on 3D objects via renderTextures, see the UI Toolkit samples
-        /// (menu: <b>Window > UI Toolkit > Examples > Rendering > RenderTexture (Runtime)</b>).
+        /// @@RaycastHit.textureCoord@@ in the texture's pixel space.
         /// </remarks>
+        /// <param name="screentoPanelSpaceFunction">The translation function. Set to @@null@@ to revert to the default behavior.</param>
         public void SetScreenToPanelSpaceFunction(Func<Vector2, Vector2> screentoPanelSpaceFunction)
         {
             m_AssignedScreenToPanel = screentoPanelSpaceFunction;

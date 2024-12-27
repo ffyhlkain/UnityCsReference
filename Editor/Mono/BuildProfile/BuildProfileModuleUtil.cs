@@ -4,7 +4,9 @@
 
 using System;
 using System.Collections.Generic;
+using System.Text;
 using UnityEditor.Modules;
+using UnityEditor.Rendering;
 using UnityEngine;
 using UnityEngine.Bindings;
 using UnityEngine.Rendering;
@@ -22,46 +24,35 @@ namespace UnityEditor.Build.Profile
     {
         const string k_BuyProUrl = "https://store.unity.com/products/unity-pro";
         const string k_ConsoleModuleUrl = "https://unity3d.com/platform-installation";
-        const string k_BuildSettingsPlatformIconFormat = "BuildSettings.{0}";
         const string k_LastRunnableBuildPathSeparator = "_";
         static readonly string k_NoModuleLoaded = L10n.Tr("No {0} module loaded.");
+        static readonly string k_DerivedPlatformInactive = L10n.Tr("{0} is currently disabled.");
         static readonly string k_EditorWillNeedToBeReloaded = L10n.Tr("Note: Editor will need to be restarted to load any newly installed modules");
         static readonly string k_BuildProfileRecompileReason = L10n.Tr("Active build profile scripting defines changes.");
         static readonly GUIContent k_OpenDownloadPage = EditorGUIUtility.TrTextContent("Open Download Page");
         static readonly GUIContent k_InstallModuleWithHub = EditorGUIUtility.TrTextContent("Install with Unity Hub");
-        static Dictionary<string, BuildTargetDiscovery.DiscoveredTargetInfo> s_DiscoveredTargetInfos = InitializeDiscoveredTargetDict();
+        static readonly GUIContent k_ActivateDerivedPlatform = EditorGUIUtility.TrTextContent("Enable Platform");
         static HashSet<string> s_BuildProfileIconModules = new()
         {
             "Switch",
-            "QNX",
         };
 
         /// <summary>
-        /// Classic platform display name for a given build profile. Matching
-        /// value in the old BuildSettings window.
+        /// Classic platform display name for a given build profile.
         /// </summary>
-        /// <see cref="BuildPlayerWindow"/>
-        public static string GetClassicPlatformDisplayName(string platformId)
-        {
-            var (buildTarget, subtarget) = GetBuildTargetAndSubtarget(platformId);
-            var moduleName = GetModuleName(buildTarget);
+        public static string GetClassicPlatformDisplayName(GUID platformId) =>
+            GetModuleDisplayName(platformId);
 
-            return (moduleName, subtarget) switch
-            {
-                ("OSXStandalone", StandaloneBuildSubtarget.Server) => "Mac Server",
-                ("WindowsStandalone", StandaloneBuildSubtarget.Server) => "Windows Server",
-                ("LinuxStandalone", StandaloneBuildSubtarget.Server) => "Linux Server",
-                ("OSXStandalone", _) => "Mac",
-                ("WindowsStandalone", _) => "Windows",
-                ("LinuxStandalone", _) => "Linux",
-                _ => GetModuleDisplayName(moduleName),
-            };
-        }
+        /// <summary>
+        /// Platform description.
+        /// </summary>
+        public static string GetPlatformDescription(GUID platformGuid) =>
+            BuildTargetDiscovery.BuildPlatformDescription(platformGuid);
 
         /// <summary>
         /// Fetch default editor platform icon texture.
         /// </summary>
-        public static Texture2D GetPlatformIcon(string platformId)
+        public static Texture2D GetPlatformIcon(GUID platformId)
         {
             if (LoadBuildProfileIcon(platformId, out Texture2D icon))
                 return icon;
@@ -72,12 +63,18 @@ namespace UnityEditor.Build.Profile
         /// <summary>
         /// Fetch small (16x16) editor platform icon texture.
         /// </summary>
-        public static Texture2D GetPlatformIconSmall(string platformId)
+        public static Texture2D GetPlatformIconSmall(GUID platformId)
         {
             if (LoadBuildProfileIcon(platformId, out Texture2D icon))
                 return icon;
 
             return EditorGUIUtility.LoadIcon(GetPlatformIconId(platformId) + ".Small");
+        }
+
+        [Obsolete("Do not use internal APIs from packages.")]
+        public static Texture2D GetPlatformIconSmall(string platformId)
+        {
+            return GetPlatformIconSmall(new GUID(platformId));
         }
 
         /// <summary>
@@ -98,62 +95,59 @@ namespace UnityEditor.Build.Profile
 
         /// <summary>
         /// Returns true if the module is installed and editor has permissions
-        /// for the given build target.
+        /// for the given platform guid.
         /// </summary>
-        public static bool IsModuleInstalled(string platformId)
+        public static bool IsModuleInstalled(GUID platformId)
         {
-            var (buildTarget, subtarget) = GetBuildTargetAndSubtarget(platformId);
-            var moduleName = GetModuleName(buildTarget);
+            var (buildTarget, _) = GetBuildTargetAndSubtarget(platformId);
 
-            // NamedBuildTarget will be deprecated. This code is extracted from
-            // NamedBuildTarget.FromActiveSettings. Except instead of taking a dependency
-            // on Editor User Build Settings, we use the passed subtarget.
-            NamedBuildTarget namedTarget;
-            var buildTargetGroup = BuildPipeline.GetBuildTargetGroup(buildTarget);
-            if (buildTargetGroup == BuildTargetGroup.Standalone
-                && subtarget == StandaloneBuildSubtarget.Server)
-            {
-                namedTarget = NamedBuildTarget.Server;
-            }
-            else
-            {
-                namedTarget = NamedBuildTarget.FromBuildTargetGroup(buildTargetGroup);
-            }
-
-            bool installed = BuildPlatforms.instance.BuildPlatformFromNamedBuildTarget(namedTarget).installed;
+            bool installed = BuildTargetDiscovery.BuildPlatformIsInstalled(platformId);
             return installed
                 && BuildPipeline.LicenseCheck(buildTarget)
-                && !string.IsNullOrEmpty(moduleName)
-                && ModuleManager.GetBuildProfileExtension(moduleName) != null;
+                && ModuleManager.IsPlatformSupportLoadedByGuid(platformId);
+        }
+
+        [Obsolete("Do not use internal APIs from packages.")]
+        public static bool IsModuleInstalled(string platformId)
+        {
+            return IsModuleInstalled(new GUID(platformId));
         }
 
         /// <summary>
         /// Returns true if an installed module supports build profiles.
         /// </summary>
+        public static bool IsBuildProfileSupported(GUID platformId)
+        {
+            return ModuleManager.GetBuildProfileExtension(platformId) != null;
+        }
+
+        [Obsolete("Do not use internal APIs from packages.")]
         public static bool IsBuildProfileSupported(string platformId)
         {
-            var moduleName = GetModuleName(platformId);
-            return ModuleManager.GetBuildProfileExtension(moduleName) != null;
+            return IsBuildProfileSupported(new GUID(platformId));
         }
 
         /// <summary>
         /// Generate button and label for downloading a platform module.
         /// </summary>
         /// <see cref="BuildPlayerWindow.ShowNoModuleLabel"/>
-        public static VisualElement CreateModuleNotInstalledElement(string platformId)
+        public static VisualElement CreateModuleNotInstalledElement(GUID platformId)
         {
-            var (buildTarget, subtarget) = GetBuildTargetAndSubtarget(platformId);
-            var moduleName = GetModuleName(buildTarget);
-            var targetGroup = BuildPipeline.GetBuildTargetGroup(buildTarget);
-            var namedBuildTarget = (subtarget == StandaloneBuildSubtarget.Server)
-                ? NamedBuildTarget.Server
-                : NamedBuildTarget.FromBuildTargetGroup(targetGroup);
-
-            if (namedBuildTarget == NamedBuildTarget.Server)
-                moduleName = moduleName.Replace("Standalone", "DedicatedServer");
+            if (BuildTargetDiscovery.BuildPlatformIsInstalled(platformId) && BuildTargetDiscovery.BuildPlatformIsDerivedPlatform(platformId))
+            {
+                return new IMGUIContainer(() =>
+                {
+                    GUILayout.Label(EditorGUIUtility.TextContent(string.Format(k_DerivedPlatformInactive, BuildTargetDiscovery.BuildPlatformDisplayName(platformId))));
+                    if (GUILayout.Button(k_ActivateDerivedPlatform, EditorStyles.miniButton, GUILayout.ExpandWidth(false)))
+                    {
+                        EditorPrefs.SetInt(platformId.ToString(), 1);
+                        RequestScriptCompilation(BuildProfileContext.activeProfile);
+                    }
+                });
+            }
 
             return new IMGUIContainer(
-                () => BuildPlayerWindow.ShowNoModuleLabel(namedBuildTarget, buildTarget, moduleName,
+                () => BuildPlayerWindow.ShowNoModuleLabel(platformId,
                     k_NoModuleLoaded, k_OpenDownloadPage, k_InstallModuleWithHub, k_EditorWillNeedToBeReloaded));
         }
 
@@ -162,15 +156,13 @@ namespace UnityEditor.Build.Profile
         /// BuildTarget.
         /// </summary>
         /// <returns>null when no license errors, else license check UI</returns>
-        public static VisualElement CreateLicenseNotFoundElement(string platformId)
+        public static VisualElement CreateLicenseNotFoundElement(GUID platformId)
         {
             var buildTarget = GetBuildTargetAndSubtarget(platformId).Item1;
             if (BuildPipeline.LicenseCheck(buildTarget))
                 return null;
 
-            var targetGroup = BuildPipeline.GetBuildTargetGroup(buildTarget);
-            var namedBuildTarget = NamedBuildTarget.FromBuildTargetGroup(targetGroup);
-            string niceName = BuildPipeline.GetBuildTargetGroupDisplayName(namedBuildTarget.ToBuildTargetGroup());
+            string displayName = GetModuleDisplayName(platformId);
             string licenseMsg = L10n.Tr("Your license does not cover {0} Publishing.");
             string buttonMsg = L10n.Tr("Go to Our Online Store");
             string url = k_BuyProUrl;
@@ -184,10 +176,10 @@ namespace UnityEditor.Build.Profile
 
             var root = new VisualElement();
             root.style.flexDirection = FlexDirection.Column;
-            var label = new Label(string.Format(licenseMsg, niceName));
+            var label = new Label(string.Format(licenseMsg, displayName));
             label.style.whiteSpace = WhiteSpace.Normal;
             root.Add(label);
-            if (!BuildTargetDiscovery.PlatformHasFlag(buildTarget, TargetAttributes.IsStandalonePlatform))
+            if (!IsStandalonePlatform(buildTarget))
             {
                 var button = new Button(() => Application.OpenURL(url));
                 button.style.width = 200;
@@ -201,17 +193,12 @@ namespace UnityEditor.Build.Profile
             BuildTargetDiscovery.PlatformHasFlag(buildTarget, TargetAttributes.IsStandalonePlatform);
 
         /// <summary>
-        /// Retrieve the respective module name for a build target
+        /// Retrieve the respective module name for a platform guid.
         /// </summary>
-        public static string GetModuleName(BuildTarget buildTarget)
-        {
-            return BuildTargetDiscovery.GetModuleNameForBuildTarget(buildTarget);
-        }
-
-        public static string GetModuleName(string platformId)
+        public static string GetModuleName(GUID platformId)
         {
             var buildTarget = GetBuildTargetAndSubtarget(platformId).Item1;
-            return GetModuleName(buildTarget);
+            return BuildTargetDiscovery.GetModuleNameForBuildTarget(buildTarget);
         }
 
         /// <summary>
@@ -219,18 +206,7 @@ namespace UnityEditor.Build.Profile
         /// </summary>
         public static void SwitchLegacyActiveFromBuildProfile(BuildProfile profile)
         {
-            var buildTargetGroup = BuildPipeline.GetBuildTargetGroup(profile.buildTarget);
-
-            if (buildTargetGroup == BuildTargetGroup.Standalone)
-            {
-                EditorUserBuildSettings.SwitchActiveBuildTargetAndSubtarget(
-                    profile.buildTarget,
-                    (int)profile.subtarget);
-                return;
-            }
-
-            // Subtarget fetched by EditorUserBuildSettings maps to the active build profile.
-            EditorUserBuildSettings.SwitchActiveBuildTarget(buildTargetGroup, profile.buildTarget);
+            EditorUserBuildSettings.SwitchActiveBuildTargetGuid(profile.platformGuid);
         }
 
         public static void SwitchLegacySelectedBuildTargets(BuildProfile profile)
@@ -266,9 +242,10 @@ namespace UnityEditor.Build.Profile
             if (activeProfile == null)
                 throw new ArgumentException("Active build profile is null.");
 
-            BuildTarget buildTarget = activeProfile.buildTarget;
-            BuildTargetGroup buildTargetGroup = BuildPipeline.GetBuildTargetGroup(buildTarget);
-            int subtarget = EditorUserBuildSettings.GetActiveSubtargetFor(buildTarget);
+            var buildTarget = activeProfile.buildTarget;
+            var buildTargetGroup = BuildPipeline.GetBuildTargetGroup(buildTarget);
+            int subtarget = IsStandalonePlatform(buildTarget) ?
+                (int)activeProfile.subtarget : EditorUserBuildSettings.GetActiveSubtargetFor(buildTarget);
 
             options.options = GetBuildOptions(buildTarget, buildTargetGroup, buildLocation, customBuildOptions);
             options.target = buildTarget;
@@ -331,25 +308,26 @@ namespace UnityEditor.Build.Profile
             return options;
         }
 
-        public static IBuildProfileExtension GetBuildProfileExtension(string moduleName) =>
-            ModuleManager.GetBuildProfileExtension(moduleName);
+        public static IBuildProfileExtension GetBuildProfileExtension(GUID platformId) =>
+            ModuleManager.GetBuildProfileExtension(platformId);
 
         public static GUIStyle dropDownToggleButton => EditorStyles.dropDownToggleButton;
 
         /// <summary>
         /// Returns all discovered platform keys that are possible Build Profile targets.
         /// </summary>
-        public static List<string> FindAllViewablePlatforms()
+        public static List<GUID> FindAllViewablePlatforms()
         {
-            var result = new List<string>()
+            var result = new List<GUID>();
+
+            foreach (var platformGuid in BuildTargetDiscovery.GetAllPlatforms())
             {
-                GetPlatformId(BuildTarget.StandaloneWindows64, StandaloneBuildSubtarget.Player),
-                GetPlatformId(BuildTarget.StandaloneOSX, StandaloneBuildSubtarget.Player),
-                GetPlatformId(BuildTarget.StandaloneLinux64, StandaloneBuildSubtarget.Player),
-                GetPlatformId(BuildTarget.StandaloneWindows64, StandaloneBuildSubtarget.Server),
-                GetPlatformId(BuildTarget.StandaloneOSX, StandaloneBuildSubtarget.Server),
-                GetPlatformId(BuildTarget.StandaloneLinux64, StandaloneBuildSubtarget.Server)
-            };
+                var installed = BuildTargetDiscovery.BuildPlatformIsInstalled(platformGuid);
+                if (!installed && BuildTargetDiscovery.BuildPlatformIsHiddenInUI(platformGuid))
+                    continue;
+
+                result.Add(platformGuid);
+            }
 
             // Swap current editor standalone platform to the top.
             if (Application.platform == RuntimePlatform.OSXEditor)
@@ -357,33 +335,30 @@ namespace UnityEditor.Build.Profile
             if (Application.platform == RuntimePlatform.LinuxEditor)
                 result.Reverse(0, 3);
 
-            foreach (var buildTargetInfo in BuildTargetDiscovery.GetBuildTargetInfoList())
-            {
-                if (buildTargetInfo.HasFlag(TargetAttributes.IsStandalonePlatform))
-                    continue;
-
-                // installed platform check from BuildPlatforms
-                bool installed = BuildPipeline.GetPlaybackEngineDirectory(buildTargetInfo.buildTargetPlatformVal, BuildOptions.None, false) != string.Empty;
-                if (!installed && buildTargetInfo.HasFlag(TargetAttributes.HideInUI))
-                    continue;
-
-                var platformId = GetPlatformId(buildTargetInfo.buildTargetPlatformVal, StandaloneBuildSubtarget.Default);
-                result.Add(platformId);
-            }
-
             return result;
+        }
+
+        public static bool IsPlatformVisibleInPlatformBrowserOnly(GUID platformGuid)
+        {
+            return BuildTargetDiscovery.BuildPlatformIsVisibleInPlatformBrowserOnly(platformGuid);
+        }
+
+        public static bool IsPlatformAvailableOnHostPlatform(GUID platformGuid, OperatingSystemFamily operatingSystemFamily)
+        {
+            return BuildTargetDiscovery.BuildPlatformIsAvailableOnHostPlatform(platformGuid, SystemInfo.operatingSystemFamily);
         }
 
         /// <summary>
         /// Check if the user is able to build his VT-enabled Player for a target platform
         /// </summary>
-        public static bool IsVirtualTexturingSettingsValid(BuildTarget buildTarget)
+        public static bool IsVirtualTexturingSettingsValid(GUID platformGuid)
         {
             if (!PlayerSettings.GetVirtualTexturingSupportEnabled())
             {
                 return true;
             }
 
+            var (buildTarget, _) = GetBuildTargetAndSubtarget(platformGuid);
             if (!UnityEngine.Rendering.VirtualTexturingEditor.Building.IsPlatformSupportedForPlayer(buildTarget))
             {
                 return false;
@@ -430,6 +405,43 @@ namespace UnityEditor.Build.Profile
         public static void RemovePlayerSettings(BuildProfile buildProfile)
         {
             buildProfile.RemovePlayerSettings(clearYaml: true);
+        }
+
+        /// <summary>
+        /// Create graphics settings override for build profile
+        /// </summary>
+        public static void CreateGraphicsSettings(BuildProfile buildProfile)
+        {
+            buildProfile.CreateGraphicsSettings();
+        }
+
+        /// <summary>
+        /// Remove build profile graphics settings override
+        /// </summary>
+        public static void RemoveGraphicsSettings(BuildProfile buildProfile)
+        {
+            buildProfile.RemoveGraphicsSettings();
+        }
+
+        /// <summary>
+        /// Create graphics settings quality for build profile
+        /// </summary>
+        public static void CreateQualitySettings(BuildProfile buildProfile)
+        {
+            buildProfile.CreateQualitySettings();
+        }
+
+        /// <summary>
+        /// Remove build profile quality settings override
+        /// </summary>
+        public static void RemoveQualitySettings(BuildProfile buildProfile)
+        {
+            buildProfile.RemoveQualitySettings();
+        }
+
+        public static void NotifyBuildProfileExtensionOfCreation(BuildProfile buildProfile, int preconfiguredSettingsVariant)
+        {
+            buildProfile.NotifyBuildProfileExtensionOfCreation(preconfiguredSettingsVariant);
         }
 
         /// <summary>
@@ -524,11 +536,12 @@ namespace UnityEditor.Build.Profile
 
         internal static string GetBuildProfileLastRunnableBuildPathKey(BuildTarget buildTarget, StandaloneBuildSubtarget standaloneBuildSubtarget)
         {
+            var platformGuid = GetPlatformId(buildTarget, standaloneBuildSubtarget);
             var activeProfile = BuildProfile.GetActiveBuildProfile();
-            if (activeProfile != null && activeProfile.buildTarget == buildTarget && activeProfile.subtarget == standaloneBuildSubtarget)
+            if (activeProfile != null && activeProfile.platformGuid == platformGuid)
                 return activeProfile.GetLastRunnableBuildPathKey();
 
-            var classicProfile = BuildProfileContext.instance.GetForClassicPlatform(buildTarget, standaloneBuildSubtarget);
+            var classicProfile = BuildProfileContext.instance.GetForClassicPlatform(platformGuid);
             return classicProfile != null ? classicProfile.GetLastRunnableBuildPathKey() : string.Empty;
         }
 
@@ -542,18 +555,7 @@ namespace UnityEditor.Build.Profile
             EditorPrefs.SetString(key, value);
         }
 
-        static Dictionary<string, BuildTargetDiscovery.DiscoveredTargetInfo> InitializeDiscoveredTargetDict()
-        {
-            var result = new Dictionary<string, BuildTargetDiscovery.DiscoveredTargetInfo>();
-            foreach (var kvp in BuildTargetDiscovery.GetBuildTargetInfoList())
-            {
-                var targetString = GetModuleName(kvp.buildTargetPlatformVal);
-                result.TryAdd(targetString, kvp);
-            }
-            return result;
-        }
-
-        static bool LoadBuildProfileIcon(string platformId, out Texture2D icon)
+        static bool LoadBuildProfileIcon(GUID platformId, out Texture2D icon)
         {
             var moduleName = GetModuleName(platformId);
             if (s_BuildProfileIconModules.Contains(moduleName))
@@ -566,33 +568,19 @@ namespace UnityEditor.Build.Profile
             return false;
         }
 
-        static string GetPlatformIconId(string platformId)
+        static string GetPlatformIconId(GUID platformId)
         {
-            var (buildTarget, subtarget) = GetBuildTargetAndSubtarget(platformId);
-            var moduleName = GetModuleName(buildTarget);
+            var iconName = BuildTargetDiscovery.BuildPlatformIconName(platformId);
 
-            if (subtarget == StandaloneBuildSubtarget.Server)
-            {
-                return string.Format(k_BuildSettingsPlatformIconFormat, "DedicatedServer");
-            }
+            if (string.IsNullOrEmpty(iconName))
+                return "BuildSettings.Editor";
 
-            if (s_DiscoveredTargetInfos.TryGetValue(moduleName, out var targetInfo))
-            {
-                return targetInfo.iconName;
-            }
-
-            return "BuildSettings.Editor";
+            return iconName;
         }
 
-        /// <summary>
-        /// Module display name as defined on native side in "BuildTargetGroupName.h"
-        /// </summary>
-        static string GetModuleDisplayName(string moduleName)
+        static string GetModuleDisplayName(GUID platformId)
         {
-            if (!s_DiscoveredTargetInfos.TryGetValue(moduleName, out var gt))
-                return moduleName;
-
-            return BuildPipeline.GetBuildTargetGroupDisplayName(BuildPipeline.GetBuildTargetGroup(gt.buildTargetPlatformVal));
+            return BuildTargetDiscovery.BuildPlatformDisplayName(platformId);
         }
 
         /// <summary>
@@ -604,17 +592,267 @@ namespace UnityEditor.Build.Profile
             return lastUnderscoreIndex != -1 ? key[(lastUnderscoreIndex + 1)..] : string.Empty;
         }
 
-        public static string GetPlatformId(BuildTarget buildTarget, StandaloneBuildSubtarget subtarget)
+        /// <summary>
+        /// Get the platform GUID corresponding to the BuildTarget and the StandaloneBuildSubtarget.
+        /// </summary>
+        /// <param name="buildTarget">The BuildTarget to get the platform GUID for.</param>
+        /// <param name="subtarget">The StandaloneBuildSubtarget to get the platform GUID for.</param>
+        /// <returns>The platform GUID. Derived platform GUID when the active platform is a derived platform. Base platform GUID otherwise.</returns>
+        public static GUID GetPlatformId(BuildTarget buildTarget, StandaloneBuildSubtarget subtarget)
         {
             var platformGuid = subtarget == StandaloneBuildSubtarget.Server && IsStandalonePlatform(buildTarget)
                 ? BuildTargetDiscovery.GetGUIDFromBuildTarget(NamedBuildTarget.Server, buildTarget)
                 : BuildTargetDiscovery.GetGUIDFromBuildTarget(buildTarget);
-            return platformGuid.ToString();
+            return platformGuid;
         }
 
-        public static (BuildTarget, StandaloneBuildSubtarget) GetBuildTargetAndSubtarget(string platformId)
+        public static (BuildTarget, StandaloneBuildSubtarget) GetBuildTargetAndSubtarget(GUID platformId)
         {
-            return BuildTargetDiscovery.GetBuildTargetAndSubtargetFromGUID(new GUID(platformId));
+            return BuildTargetDiscovery.GetBuildTargetAndSubtargetFromGUID(platformId);
+        }
+
+        public static string[] BuildPlatformRequiredPackages(GUID platformGuid)
+        {
+            return BuildTargetDiscovery.BuildPlatformRequiredPackages(platformGuid);
+        }
+
+        public static string[] BuildPlatformRecommendedPackages(GUID platformGuid)
+        {
+            return BuildTargetDiscovery.BuildPlatformRecommendedPackages(platformGuid);
+        }
+
+        public static string BuildPlatformDescription(GUID platformGuid)
+        {
+            return BuildTargetDiscovery.BuildPlatformDescription(platformGuid);
+        }
+
+        public static void OnActiveProfileGraphicsSettingsChanged(bool hasGraphicsSettings)
+        {
+            EditorGraphicsSettings.activeProfileHasGraphicsSettings = hasGraphicsSettings;
+            GraphicsSettingsInspector.OnActiveProfileGraphicsSettingsChanged?.Invoke();
+        }
+
+        internal static void RemoveQualityLevelFromAllProfiles(string qualityLevelName)
+        {
+            var profiles = GetAllBuildProfiles();
+            foreach (var profile in profiles)
+            {
+                if (profile.qualitySettings == null)
+                    continue;
+
+                profile.qualitySettings.RemoveQualityLevel(qualityLevelName);
+            }
+        }
+
+        internal static void RenameQualityLevelInAllProfiles(string oldName, string newName)
+        {
+            var profiles = GetAllBuildProfiles();
+            foreach (var profile in profiles)
+            {
+                if (profile.qualitySettings == null)
+                    continue;
+
+                profile.qualitySettings.RenameQualityLevel(oldName, newName);
+            }
+        }
+
+        /// <summary>
+        /// Get all custom build profiles in the project.
+        /// </summary>
+        public static List<BuildProfile> GetAllBuildProfiles()
+        {
+            var alreadyLoadedBuildProfiles = Resources.FindObjectsOfTypeAll<BuildProfile>();
+
+            const string buildProfileAssetSearchString = $"t:{nameof(BuildProfile)}";
+            var assetsGuids = AssetDatabase.FindAssets(buildProfileAssetSearchString);
+            var result = new List<BuildProfile>(assetsGuids.Length);
+
+            // Suppress missing type warning thrown by serialization. This could happen
+            // when the build profile window is opened, then entering play mode and the
+            // module for that profile is not installed.
+            BuildProfileModuleUtil.SuppressMissingTypeWarning();
+
+            foreach (var guid in assetsGuids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                BuildProfile profile = AssetDatabase.LoadAssetAtPath<BuildProfile>(path);
+                if (profile == null)
+                {
+                    Debug.LogWarning($"[BuildProfile] Failed to load asset at path: {path}");
+                    continue;
+                }
+
+                result.Add(profile);
+            }
+
+            foreach (var buildProfile in alreadyLoadedBuildProfiles)
+            {
+                // Asset database will not give us any build profiles that get created in memory
+                // and we need to include them in this list as we use it to detect that build profiles
+                // have been destroyed and destroy their resources like PlayerSettings afterwards.
+                // Skipping the in-memory build profiles will result in us deleting their associated
+                // player settings object while it's being used and will lead to a crash (UUM-77423)
+                if (buildProfile &&
+                    !BuildProfileContext.IsClassicPlatformProfile(buildProfile) &&
+                    !BuildProfileContext.IsSharedProfile(buildProfile.platformGuid) &&
+                    !EditorUtility.IsPersistent(buildProfile))
+                {
+                    result.Add(buildProfile);
+                }
+            }
+
+            return result;
+        }
+
+        public static PlayerSettings GetGlobalPlayerSettings()
+        {
+            return BuildProfile.GetGlobalPlayerSettings();
+        }
+
+        /// <summary>
+        /// Handles change in global player settings object from the build profile workflow.
+        /// Checks that the player settings in <see cref="nextBuildProfile"/> can be applied
+        /// and/or requests action from the end user.
+        /// </summary>
+        /// <returns>
+        ///     true, if player settings for the next profile have been handled.
+        /// </returns>
+        public static bool HandlePlayerSettingsChanged(
+            BuildProfile currentBuildProfile, BuildProfile nextBuildProfile)
+        {
+            PlayerSettings projectSettingsPlayerSettings = GetGlobalPlayerSettings();
+            PlayerSettings currentPlayerSettings = projectSettingsPlayerSettings;
+            PlayerSettings nextPlayerSettings = projectSettingsPlayerSettings;
+
+            var currentBuildTarget = EditorUserBuildSettings.activeBuildTarget;
+            var nextBuildTarget = EditorUserBuildSettings.activeBuildTarget;
+
+            if (currentBuildProfile != null)
+            {
+                currentBuildTarget = currentBuildProfile.buildTarget;
+                if (currentBuildProfile.playerSettings != null)
+                {
+                    currentPlayerSettings = currentBuildProfile.playerSettings;
+                }
+            }
+
+            if (nextBuildProfile != null)
+            {
+                nextBuildTarget = nextBuildProfile.buildTarget;
+                if (nextBuildProfile.playerSettings != null)
+                {
+                    nextPlayerSettings = nextBuildProfile.playerSettings;
+                }
+            }
+
+            var settingsRequiringRestart = PlayerSettings.GetSettingsRequiringRestart(currentPlayerSettings,
+                nextPlayerSettings, currentBuildTarget, nextBuildTarget);
+            // if we've found settings that need restarting..
+            if (settingsRequiringRestart.Length > 0 )
+            {
+                // ..we show the restart prompt, if the user restarts, we add a restart call to the editor
+                if (ShowRestartEditorDialog(settingsRequiringRestart))
+                {
+                    if (ContainsPlayerSetting(settingsRequiringRestart, PlayerSettingsRequiringRestart.VirtualTexturing))
+                    {
+                        PlayerSettings.SyncVirtualTexturingState(nextPlayerSettings);
+                    }
+
+                    EditorApplication.delayCall += EditorApplication.RestartEditorAndRecompileScripts;
+                    return true;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+
+            // Handle editor changed requiring background work without an editor prompt.
+            PlayerSettingsEditor.HandlePlayerSettingsChanged(
+                currentPlayerSettings, nextPlayerSettings,
+                currentBuildTarget, nextBuildTarget);
+            return true;
+        }
+
+
+        /// <summary>
+        /// Show the restart editor dialog with the names of the settings that required the restart to take effect.
+        /// </summary>
+        static bool ShowRestartEditorDialog(PlayerSettingsRequiringRestart[] settingsRequiringRestart)
+        {
+            var editorPromptText = new StringBuilder();
+            editorPromptText.AppendLine(L10n.Tr("The Unity editor must be restarted for the following settings to take effect:"));
+            var playerSettingNames = GetPlayerSettingNamesToEditorRestartPromptText(settingsRequiringRestart);
+            editorPromptText.AppendLine(playerSettingNames.ToString());
+            return EditorUtility.DisplayDialog(L10n.Tr("Unity editor restart required"),
+                editorPromptText.ToString(), L10n.Tr("Apply"), L10n.Tr("Cancel"));
+        }
+
+
+        internal static PlayerSettings GetBuildProfileOrGlobalPlayerSettings(BuildProfile buildProfile)
+        {
+            if (buildProfile == null || buildProfile.playerSettings == null)
+            {
+                return BuildProfile.GetGlobalPlayerSettings();
+            }
+            return buildProfile.playerSettings;
+        }
+
+        public static bool IsBasePlatformOfActivePlatform(GUID platformGuid)
+        {
+            var module = ModuleManager.FindPlatformSupportModule(EditorUserBuildSettings.activePlatformGuid);
+            if (module == null)
+                return false;
+            if (module is IDerivedBuildTargetProvider derivedBuildTargetProvider)
+            {
+                var basePlatformGuid = derivedBuildTargetProvider.GetBasePlatformGuid();
+                return basePlatformGuid == platformGuid;
+            }
+            return false;
+        }
+
+        public static void RepaintProjectSettingsWindow()
+        {
+            foreach (var window in EditorWindow.activeEditorWindows)
+            {
+                if (window is ProjectSettingsWindow)
+                {
+                    window.Repaint();
+                }
+            }
+        }
+
+        /*
+         * private helper functions
+         */
+        private static bool ContainsPlayerSetting(PlayerSettingsRequiringRestart[] playerSettings, PlayerSettingsRequiringRestart targetSetting)
+        {
+            foreach (PlayerSettingsRequiringRestart setting in playerSettings)
+            {
+                if (setting == targetSetting)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static StringBuilder GetPlayerSettingNamesToEditorRestartPromptText(PlayerSettingsRequiringRestart[] settingsRequiringRestart)
+        {
+            var settingsText = new StringBuilder();
+            foreach (PlayerSettingsRequiringRestart setting in settingsRequiringRestart)
+            {
+                var settingPromptText = setting switch
+                {
+                    PlayerSettingsRequiringRestart.IncrementalGC => "Incremental GC",
+                    PlayerSettingsRequiringRestart.ActiveInputHandling => "Active Input Handling",
+                    PlayerSettingsRequiringRestart.GraphicsJobs => "Graphics Jobs",
+                    PlayerSettingsRequiringRestart.VirtualTexturing => "Virtual Texturing",
+                    _ => string.Empty
+                };
+                settingsText.AppendLine(settingPromptText);
+            }
+            return settingsText;
         }
     }
 }

@@ -4,27 +4,16 @@
 
 using System;
 using UnityEngine;
+using UnityEngine.Bindings;
 using UnityEngine.UIElements;
 namespace UnityEditor.UIElements
 {
+    [VisibleToOtherModules("UnityEditor.UIBuilderModule")]
     sealed class EditorPanel : Panel
     {
         readonly EditorCursorManager m_CursorManager = new EditorCursorManager();
         static EditorContextualMenuManager s_ContextualMenuManager = new EditorContextualMenuManager();
-        static Shader s_EditorShader;
-        static readonly int s_EditorColorSpaceID = Shader.PropertyToID("_EditorColorSpace");
 
-        static Shader EditorShader
-        {
-            get
-            {
-                if (s_EditorShader == null)
-                {
-                    s_EditorShader = Shader.Find("Hidden/UIElements/EditorUIE");
-                }
-                return s_EditorShader;
-            }
-        }
         public static Panel FindOrCreate(ScriptableObject ownerObject)
         {
             var id = ownerObject.GetInstanceID();
@@ -43,15 +32,8 @@ namespace UnityEditor.UIElements
             cursorManager = m_CursorManager;
             contextualMenuManager = s_ContextualMenuManager;
             panelDebug = new PanelDebug(this);
-            standardShader = EditorShader;
-            updateMaterial += OnUpdateMaterial;
             uiElementsBridge = new EditorUIElementsBridge();
             UpdateScalingFromEditorWindow = true;
-        }
-
-        static void OnUpdateMaterial(Material mat)
-        {
-            mat?.SetFloat(s_EditorColorSpaceID, QualitySettings.activeColorSpace == ColorSpace.Linear ? 1 : 0);
         }
 
         public static void InitEditorUpdater(BaseVisualElementPanel panel, VisualTreeUpdater visualTreeUpdater)
@@ -77,24 +59,24 @@ namespace UnityEditor.UIElements
                 EditorWindow editorWindow => GetBackingScaleFactor(editorWindow?.m_Parent),
                 IEditorWindowModel ewm => GetBackingScaleFactor(ewm.window),
                 _ => null,
-            } ;
+            };
         }
 
         private void CheckPanelScaling()
         {
             // Can be disabled for setting a manual scale for testing
-            if (UpdateScalingFromEditorWindow)
+            if (UpdateScalingFromEditorWindow && ownerObject != null)
             {
 
                 //check that the scaling is up to date
                 var windowScaling = GetBackingScaleFactor();
                 if (windowScaling == null || windowScaling.Value == -1)
                 {
-                    Debug.Assert(windowScaling != null, "got -1 here!!" );
-                   // if we have -1, we were able to get to a GuiView, but the native call returned -1 because there is no containerWindow
-                   // if the windowScaling == null we were simply not able to get to a GuiView
-                   // in both cases, we want to update the scaling like the old behavior.
-                   pixelsPerPoint = GUIUtility.pixelsPerPoint;
+                    Debug.Assert(windowScaling != null, "got -1 here!!");
+                    // if we have -1, we were able to get to a GuiView, but the native call returned -1 because there is no containerWindow
+                    // if the windowScaling == null we were simply not able to get to a GuiView
+                    // in both cases, we want to update the scaling like the old behavior.
+                    pixelsPerPoint = GUIUtility.pixelsPerPoint;
                 }
                 else
                 {
@@ -118,5 +100,15 @@ namespace UnityEditor.UIElements
             CheckPanelScaling();
             base.Render();
         }
+
+        internal override Color HyperlinkColor
+        {
+            get
+            {
+                ColorUtility.TryParseHtmlString(EditorGUIUtility.GetHyperlinkColorForSkin(), out Color color);
+                return color;
+            }
+        }
+    
     }
 }

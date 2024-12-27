@@ -21,6 +21,9 @@ namespace UnityEngine.UIElements
     /// Inspector window in  the UI Builder.
     /// By default, the custom control appears in the Library tab in UI Builder.
     /// To hide it from the Library tab, provide the <see cref="HideInInspector"/> attribute.
+    ///
+    /// For an example of migrating a custom control from `UxmlFactory` and `UxmlTraits` to the `UxmlElement` and `UxmlAttributes` system,
+    /// refer to [[wiki:UpgradeGuideUnity6#enhanced-custom-controls-creation-with-uxml|Enhanced custom controls creation with UXML]].
     /// </remarks>
     /// <example>
     /// The following example creates a custom control with multiple attributes:
@@ -31,11 +34,13 @@ namespace UnityEngine.UIElements
     /// <code source="../../../../Modules/UIElements/Tests/UIElementsExamples/Assets/Examples/UxmlElement_ExampleElement.uxml"/>
     /// </example>
     /// <example>
-    /// <para>When you create a custom control, the default name used in UXML and UI Builder is the element type name (C# class name).
-    /// However, you can customize the name to make it easier to refer to the element.</para>
-    /// <para>__Note__: You are still required to reference the classes' namespace in UXML.</para>
-    /// <para>To create a custom name for an element, provide a value to the @@name@@ property.
-    /// For example, if you create the following custom button:</para>
+    /// When you create a custom control, the default name used in UXML and UI Builder is the element type name (C# class name).
+    /// However, you can customize the name to make it easier to refer to the element.
+    ///\\
+    ///\\
+    ///__Note__: You are still required to reference the classes' namespace in UXML.
+    /// To create a custom name for an element, provide a value to the @@name@@ property.
+    /// For example, if you create the following custom button:
     /// <code source="../../../../Modules/UIElements/Tests/UIElementsExamples/Assets/Examples/UxmlElement_CustomButtonElement.cs"/>
     /// </example>
     /// <example>
@@ -68,12 +73,13 @@ namespace UnityEngine.UIElements
 
     /// <summary>
     /// Declares that a field or property is associated with a UXML attribute.
+    /// Convenience overload, shorthand for `Query&lt;T&gt;.Build().First().`
     /// </summary>
     /// <remarks>
     /// You can use the UxmlAttribute attribute to declare that a property or field is associated with a UXML attribute.
     /// When an element is marked with the UxmlElement attribute, a corresponding <see cref="UxmlSerializedData"/> class is
     /// generated in the partial class.
-    /// This data class contains a <see cref="SerializeField"/> for each field or property that's marked with the UxmlAttribute attribute. 
+    /// This data class contains a <see cref="SerializeField"/> for each field or property that's marked with the UxmlAttribute attribute.
     /// When a field or property is associated with a UXML attribute, all of its attributes are transferred over to the serialized version.
     /// This allows for the support of custom property drawers and decorator attributes, such as <see cref="HeaderAttribute"/>, <see cref="TextAreaAttribute"/>,
     /// <see cref="RangeAttribute"/>, <see cref="TooltipAttribute"/>, and so on.
@@ -92,7 +98,7 @@ namespace UnityEngine.UIElements
     /// By default, when resolving the attribute name, the field or property name splits into lowercase words connected by hyphens.
     /// The original uppercase characters in the name are used to denote where the name should be split. For example, if the property name
     /// is @@myIntValue@@, the corresponding attribute name would be @@my-int-value@@.
-    /// You can customize the attribute name through the UxmlAttribute name argument. 
+    /// You can customize the attribute name through the UxmlAttribute name argument.
     /// The following example creates a custom control with customized attribute names:
     /// <code source="../../../../Modules/UIElements/Tests/UIElementsExamples/Assets/Examples/UxmlAttribute_CustomAttributeNameExample.cs"/>
     /// </example>
@@ -121,7 +127,7 @@ namespace UnityEngine.UIElements
     /// <example>
     /// The UI Builder displays the attributes with the decorators:
     ///
-    /// 
+    ///
     ///{img UIB-decorators.png}
     ///
     /// The following example creates a custom control with a custom property drawer:
@@ -134,9 +140,8 @@ namespace UnityEngine.UIElements
     ///{img UIB-propertydrawer.gif}
     ///
     /// You can use struct or class instances as attributes and even lists of struct or class instances in UXML.
-    /// However, they must be convertible to and from a string and you must declare a ::ref::UxmlAttributeConverter to support this conversion.
-    /// When using the class in a list, ensure that its string representation does not contain any commas (",") as this character is used by
-    /// the list to separate the items. See ::ref::UxmlObjectReferenceAttribute for an example of a field supports more complex data.
+    /// However, they must be convertible to and from a string and you must declare a [[UIElements.UxmlAttributeConverter_1]] to support this conversion.
+    /// For an example of a field that supports more complex data, refer to [[UIElements.UxmlObjectReferenceAttribute]].
     /// The following example shows how a class instance can support a property and list:
     /// <code source="../../../../Modules/UIElements/Tests/UIElementsExamples/Assets/Examples/UxmlAttribute_MyClassWithData.cs"/>
     /// </example>
@@ -145,6 +150,16 @@ namespace UnityEngine.UIElements
     /// </example>
     /// <example>
     /// <code source="../../../../Modules/UIElements/Tests/UIElementsExamples/Assets/Examples/UxmlAttribute_MyClassWithDataConverter.uxml"/>
+    /// </example>
+    /// <example>
+    /// Strings can contain commas, encoded as @@%2C@@ in the UXML.
+    /// When you authoring UXML directly, use the encoded form @@%2C@@ to ensure commas are not mistaken for list separators.
+    /// The following C# code defines a custom control, MyStringListElement, with a @@my-string@@ attribute which represents a List of strings.
+    /// <code source="../../../../Modules/UIElements/Tests/UIElementsExamples/Assets/Examples/UxmlAttribute_StringList.cs"/>
+    /// </example>
+    /// <example>
+    /// The following UXML example uses @@%2C@@ to separate words in the string list:
+    /// <code source="../../../../Modules/UIElements/Tests/UIElementsExamples/Assets/Examples/UxmlAttribute_StringList.uxml"/>
     /// </example>
     /// <example>
     /// When an attribute shares the same UXML name as an attribute from a child class,
@@ -201,7 +216,7 @@ namespace UnityEngine.UIElements
     {
         public string path { get; private set; }
 
-        public UxmlAttributeBindingPathAttribute(string bindingPath) 
+        public UxmlAttributeBindingPathAttribute(string bindingPath)
         {
             path = bindingPath;
         }
@@ -257,7 +272,7 @@ namespace UnityEngine.UIElements
     /// </summary>
     /// <remarks>
     /// A UXML object is a class that can be instantiated from UXML and contain UXML attributes.
-    ///  By utilizing the <see cref="UxmlObjectReferenceAttribute"/> attribute, you can use a UXML object to associate complex data with a field, surpassing the capabilities of a single <see cref="UxmlAttributeAttribute"/>. 
+    ///  By utilizing the <see cref="UxmlObjectReferenceAttribute"/> attribute, you can use a UXML object to associate complex data with a field, surpassing the capabilities of a single <see cref="UxmlAttributeAttribute"/>.
     /// </remarks>
     [AttributeUsage(AttributeTargets.Class, Inherited = false)]
     public class UxmlObjectAttribute : Attribute
@@ -304,7 +319,7 @@ namespace UnityEngine.UIElements
     /// </example>
     /// <example>
     /// You can use a custom property drawer to display the UXML objects in the Inspector.
-    /// <b>The property drawer must be for the UxmlObject's UxmlSerializedData type</b>.
+    /// The property drawer must be for the UxmlObject's UxmlSerializedData type.
     /// For example, to create a property drawer for the UxmlObject Student, the drawer must be for the type Studen.UxmlSerializedData.
     /// <code source="../../../../Modules/UIElements/Tests/UIElementsExamples/Assets/Examples/UxmlObject_SchoolDistrictPropertyDrawers.cs"/>
     /// </example>

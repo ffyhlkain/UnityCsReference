@@ -19,6 +19,7 @@ using FaceInfo = UnityEngine.TextCore.FaceInfo;
 using Glyph = UnityEngine.TextCore.Glyph;
 using GlyphRect = UnityEngine.TextCore.GlyphRect;
 using GlyphMetrics = UnityEngine.TextCore.GlyphMetrics;
+using System;
 
 
 namespace UnityEditor.TextCore.Text
@@ -215,8 +216,7 @@ namespace UnityEditor.TextCore.Text
             }
 
             // Get potential font face and styles for the current font.
-            if (m_SourceFont != null)
-                m_SourceFontFaces = GetFontFaces();
+            m_SourceFontFaces = GetFontFaces();
 
             ClearGeneratedData();
         }
@@ -1222,7 +1222,8 @@ namespace UnityEditor.TextCore.Text
         /// <returns></returns>
         string[] GetFontFaces()
         {
-            FontEngine.LoadFontFace(m_SourceFont, 0, 0);
+            if (FontEngine.LoadFontFace(m_SourceFont, 0, 0) != FontEngineError.Success)
+                return Array.Empty<string>();
             return FontEngine.GetFontFaces();
         }
 
@@ -1231,7 +1232,7 @@ namespace UnityEditor.TextCore.Text
         /// </summary>
         void UpdateRenderFeedbackWindow()
         {
-            m_PointSize = m_FaceInfo.pointSize;
+            m_PointSize = (int)m_FaceInfo.pointSize;
 
             string missingGlyphReport = string.Empty;
 
@@ -1827,7 +1828,7 @@ namespace UnityEditor.TextCore.Text
             if (m_SourceFont != null)
                 m_SourceFontFaces = GetFontFaces();
             m_PointSizeSamplingMode  = settings.pointSizeSamplingMode;
-            m_PointSize = settings.pointSize;
+            m_PointSize = (int)settings.pointSize;
             m_Padding = settings.padding;
             m_PaddingMode = settings.paddingMode == 0 ? PaddingMode.Pixel : (PaddingMode)settings.paddingMode;
             m_PaddingFieldValue = m_PaddingMode == PaddingMode.Percentage ? (float)m_Padding / m_PointSize * 100 : m_Padding;

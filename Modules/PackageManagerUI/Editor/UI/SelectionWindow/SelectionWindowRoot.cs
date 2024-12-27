@@ -4,7 +4,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine.UIElements;
 
 namespace UnityEditor.PackageManager.UI.Internal;
@@ -58,7 +57,7 @@ internal class SelectionWindowRoot : VisualElement
     private void RefreshItems()
     {
         m_TreeView.RefreshItems();
-        m_Footer.SetActionEnabled(m_WindowData.selectedAssets.Any());
+        m_Footer.RefreshButtons(m_WindowData.selectedNodesCount, m_WindowData.nodes.Count);
     }
 
     private VisualElement MakeItem()

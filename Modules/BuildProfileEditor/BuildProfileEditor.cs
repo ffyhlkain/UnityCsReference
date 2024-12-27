@@ -5,9 +5,8 @@
 using System;
 using UnityEditor.Modules;
 using UnityEditor.Build.Profile.Elements;
-using UnityEngine.UIElements;
 using UnityEditor.UIElements;
-using UnityEngine;
+using UnityEngine.UIElements;
 
 namespace UnityEditor.Build.Profile
 {
@@ -24,11 +23,16 @@ namespace UnityEditor.Build.Profile
         const string k_SharedSettingsInfoHelpboxButton = "shared-settings-info-helpbox-button";
         const string k_SceneListFoldout = "scene-list-foldout";
         const string k_SceneListFoldoutRoot = "scene-list-foldout-root";
+        const string k_SceneListFoldoutAddOpenSection = "scene-list-foldout-add-open-section";
+        const string k_SceneListFoldoutAddOpenButton = "scene-list-foldout-add-open-button";
         const string k_SceneListFoldoutClassicSection = "scene-list-foldout-classic-section";
         const string k_SceneListFoldoutClassicButton = "scene-list-foldout-classic-button";
+        const string k_SceneListGlobalToggle = "scene-list-global-toggle";
         const string k_CompilingWarningHelpBox = "compiling-warning-help-box";
         const string k_VirtualTextureWarningHelpBox = "virtual-texture-warning-help-box";
+        const string k_PlatformBuildWarningsRoot = "platform-build-warning-root";
         const string k_PlayerScriptingDefinesFoldout = "scripting-defines-foldout";
+        const string k_BuildSettingsFoldout = "build-settings-foldout";
         BuildProfileSceneList m_SceneList;
         HelpBox m_CompilingWarningHelpBox;
         HelpBox m_VirtualTexturingHelpBox;
@@ -84,8 +88,14 @@ namespace UnityEditor.Build.Profile
             }
 
             m_Profile = profile;
+            m_PlatformExtension = BuildProfileModuleUtil.GetBuildProfileExtension(profile.platformGuid);
 
             CleanupEventHandlers();
+
+            if (BuildProfileContext.instance.TryGetPackageAddInfo(profile, out var packageAddInfo))
+            {
+                return CreateBootstrapGUI(packageAddInfo);
+            }
 
             var root = new VisualElement();
             var visualTree = EditorGUIUtility.LoadRequired(k_Uxml) as VisualTreeAsset;
@@ -96,8 +106,10 @@ namespace UnityEditor.Build.Profile
             var noModuleFoundHelpBox = root.Q<HelpBox>(k_PlatformWarningHelpBox);
             var platformSettingsLabel = root.Q<Label>(k_BuildSettingsLabel);
             var platformSettingsBaseRoot = root.Q<VisualElement>(k_PlatformSettingsBaseRoot);
+            var platformBuildWarningsRoot = root.Q<VisualElement>(k_PlatformBuildWarningsRoot);
             var buildDataLabel = root.Q<Label>(k_BuildDataLabel);
             var sharedSettingsInfoHelpBox = root.Q<HelpBox>(k_SharedSettingsInfoHelpbox);
+            var buildSettingsFoldout = root.Q<Foldout>(k_BuildSettingsFoldout);
             m_VirtualTexturingHelpBox = root.Q<HelpBox>(k_VirtualTextureWarningHelpBox);
             m_CompilingWarningHelpBox = root.Q<HelpBox>(k_CompilingWarningHelpBox);
 
@@ -107,29 +119,57 @@ namespace UnityEditor.Build.Profile
             platformSettingsLabel.text = TrText.platformSettings;
             buildDataLabel.text = TrText.buildData;
             sharedSettingsInfoHelpBox.text = TrText.sharedSettingsInfo;
+            buildSettingsFoldout.text = TrText.GetSettingsSectionName(BuildProfileModuleUtil.GetClassicPlatformDisplayName(profile.platformGuid));
+
+            if (m_PlatformExtension != null)
+            {
+                string profileInfoMessage = m_PlatformExtension.GetProfileInfoMessage();
+                if (!string.IsNullOrEmpty(profileInfoMessage))
+                    sharedSettingsInfoHelpBox.text = profileInfoMessage;
+            }
 
             AddSceneList(root, profile);
             AddScriptingDefineListView(root);
 
-            if (!BuildProfileContext.IsClassicPlatformProfile(profile))
+            bool hasErrors = Util.UpdatePlatformRequirementsWarningHelpBox(noModuleFoundHelpBox, profile.platformGuid);
+            bool isClassic = BuildProfileContext.IsClassicPlatformProfile(profile);
+
+            if (!isClassic)
+            {
                 sharedSettingsInfoHelpBox.Hide();
+                m_ProfilePlayerSettingsEditor = BuildProfilePlayerSettingsEditor
+                    .CreatePlayerSettingsUI(root, hasErrors ? null : serializedObject);
+                ShowGraphicsSettingsSection(profile, root);
+            }
             else
             {
                 var button = root.Q<Button>(k_SharedSettingsInfoHelpboxButton);
                 button.text = TrText.addBuildProfile;
-                button.clicked += DuplicateSelectedClassicProfile;
+                button.clicked += () => PlatformDiscoveryWindow.ShowWindowAndSelectPlatform(profile.platformGuid);
             }
 
-            bool hasErrors = Util.UpdatePlatformRequirementsWarningHelpBox(noModuleFoundHelpBox, profile.platformId);
-            m_ProfilePlayerSettingsEditor = BuildProfilePlayerSettingsEditor.CreatePlayerSettingsUI(DuplicateSelectedClassicProfile, root, hasErrors ? null : serializedObject);
             if (hasErrors)
+            {
+                buildSettingsFoldout.Hide();
                 return root;
+            }
 
-            EditorApplication.update += UpdateWarningsAndButtonStatesForActiveProfile;
+            EditorApplication.update += EditorUpdate;
 
-            ShowPlatformSettings(profile, platformSettingsBaseRoot);
+            ShowPlatformSettings(profile, platformSettingsBaseRoot, platformBuildWarningsRoot);
             root.Bind(serializedObject);
             return root;
+        }
+
+        VisualElement CreateBootstrapGUI(BuildProfilePackageAddInfo packageAddInfo)
+        {
+            var bootstrapView = new BuildProfileBootstrapView();
+            m_Profile.OnPackageAddProgress = () =>
+            {
+                bootstrapView.StartSpinner();
+                bootstrapView.Set(packageAddInfo.GetPackageAddProgressInfo());
+            };
+            return bootstrapView;
         }
 
         /// <summary>
@@ -152,6 +192,7 @@ namespace UnityEditor.Build.Profile
             root.Q<HelpBox>(k_CompilingWarningHelpBox).Hide();
             root.Q<Button>(k_SharedSettingsInfoHelpboxButton).Hide();
             root.Q<Foldout>(k_PlayerScriptingDefinesFoldout).Hide();
+            root.Q<Foldout>(k_BuildSettingsFoldout).Hide();
 
             var sharedSettingsHelpbox = root.Q<HelpBox>(k_SharedSettingsInfoHelpbox);
             sharedSettingsHelpbox.text = TrText.sharedSettingsSectionInfo;
@@ -161,8 +202,6 @@ namespace UnityEditor.Build.Profile
             sectionLabel.text = TrText.sceneList;
 
             AddSceneList(root);
-
-            m_ProfilePlayerSettingsEditor = BuildProfilePlayerSettingsEditor.CreatePlayerSettingsUI(DuplicateSelectedClassicProfile, root, null);
             return root;
         }
 
@@ -193,12 +232,19 @@ namespace UnityEditor.Build.Profile
             parent.DuplicateSelectedClassicProfile();
         }
 
+        void EditorUpdate()
+        {
+            UpdateWarningsAndButtonStatesForActiveProfile();
+
+            m_ProfilePlayerSettingsEditor?.EditorUpdate();
+        }
+
         void UpdateWarningsAndButtonStatesForActiveProfile()
         {
             if (!m_Profile.IsActiveBuildProfileOrPlatform())
                 return;
 
-            bool isVirtualTexturingValid = BuildProfileModuleUtil.IsVirtualTexturingSettingsValid(m_Profile.buildTarget);
+            bool isVirtualTexturingValid = BuildProfileModuleUtil.IsVirtualTexturingSettingsValid(m_Profile.platformGuid);
             bool isCompiling = EditorApplication.isCompiling || EditorApplication.isUpdating;
             UpdateHelpBoxVisibility(m_VirtualTexturingHelpBox, !isVirtualTexturingValid);
             UpdateHelpBoxVisibility(m_CompilingWarningHelpBox, isCompiling);
@@ -228,16 +274,25 @@ namespace UnityEditor.Build.Profile
             }
         }
 
-        void ShowPlatformSettings(BuildProfile profile, VisualElement platformSettingsBaseRoot)
+        void ShowPlatformSettings(BuildProfile profile, VisualElement platformSettingsBaseRoot, VisualElement platformBuildWarningsRoot)
         {
             var platformProperties = serializedObject.FindProperty(k_PlatformSettingPropertyName);
-            m_PlatformExtension = BuildProfileModuleUtil.GetBuildProfileExtension(profile.moduleName);
-            if (m_PlatformExtension != null)
+            m_PlatformExtension = BuildProfileModuleUtil.GetBuildProfileExtension(profile.platformGuid);
+            if (m_PlatformExtension == null)
+                return;
+
+            var warningContainer = m_PlatformExtension.CreatePlatformBuildWarningsGUI(serializedObject, platformProperties);
+
+            // Build Profile Window reserves space for custom
+            // platform GUI outside of the editor scroll view.
+            if (parent != null && warningContainer != null)
             {
-                var settings = m_PlatformExtension.CreateSettingsGUI(
-                    serializedObject, platformProperties, platformSettingsState);
-                platformSettingsBaseRoot.Add(settings);
+                parent.AppendInspectorHeaderElement(warningContainer);
             }
+
+            var settings = m_PlatformExtension.CreateSettingsGUI(
+                serializedObject, platformProperties, platformSettingsState);
+            platformSettingsBaseRoot.Add(settings);
         }
 
         void AddSceneList(VisualElement root, BuildProfile profile = null)
@@ -249,14 +304,25 @@ namespace UnityEditor.Build.Profile
             bool isEnable = isGlobalSceneList || !isClassicPlatform;
 
             var sceneListFoldout = root.Q<Foldout>(k_SceneListFoldout);
+            var globalToggle = root.Q<Toggle>(k_SceneListGlobalToggle);
+            globalToggle.label = TrText.sceneListOverride;
             sceneListFoldout.text = TrText.sceneList;
             m_SceneList = (isGlobalSceneList || isClassicPlatform)
                 ? new BuildProfileSceneList()
                 : new BuildProfileSceneList(profile);
             Undo.undoRedoEvent += m_SceneList.OnUndoRedo;
-            var container = m_SceneList.GetSceneListGUI(isEnable);
+            var container = m_SceneList.GetSceneListGUI();
             container.SetEnabled(isEnable);
             root.Q<VisualElement>(k_SceneListFoldoutRoot).Add(container);
+
+            if (isEnable)
+            {
+                // Bind Add Open Scenes List button
+                root.Q<VisualElement>(k_SceneListFoldoutAddOpenSection).Show();
+                var addOpenSceneListButton = root.Q<Button>(k_SceneListFoldoutAddOpenButton);
+                addOpenSceneListButton.text = TrText.addOpenScenes;
+                addOpenSceneListButton.clicked += () => m_SceneList.AddOpenScenes();
+            }
 
             if (isClassicPlatform)
             {
@@ -268,15 +334,42 @@ namespace UnityEditor.Build.Profile
                 {
                     parent.OnClassicSceneListSelected();
                 };
+
+                globalToggle.Hide();
+                return;
             }
+
+            if (isGlobalSceneList)
+            {
+                globalToggle.Hide();
+                return;
+            }
+
+            var globalToggleProperty = serializedObject.FindProperty("m_OverrideGlobalSceneList");
+            globalToggle.BindProperty(globalToggleProperty);
+            globalToggle.TrackPropertyValue(globalToggleProperty, property =>
+            {
+                if (property.boolValue)
+                    sceneListFoldout.Show();
+                else
+                    sceneListFoldout.Hide();
+            });
+
+            if (globalToggleProperty.boolValue)
+                sceneListFoldout.Show();
+            else
+                sceneListFoldout.Hide();
         }
 
         void CleanupEventHandlers()
         {
+            if (m_Profile is not null)
+                m_Profile.OnPackageAddProgress = null;
+
             if (m_SceneList is not null)
                 Undo.undoRedoEvent -= m_SceneList.OnUndoRedo;
 
-            EditorApplication.update -= UpdateWarningsAndButtonStatesForActiveProfile;
+            EditorApplication.update -= EditorUpdate;
         }
 
         void AddScriptingDefineListView(VisualElement root)
@@ -328,7 +421,7 @@ namespace UnityEditor.Build.Profile
             if (m_Profile == null)
                 return;
 
-            if (m_Profile != BuildProfileContext.instance.activeProfile)
+            if (m_Profile != BuildProfileContext.activeProfile)
                 return;
 
             // Avoid dialog when waiting for compilation.
@@ -389,6 +482,18 @@ namespace UnityEditor.Build.Profile
             serializedObject.Update();
             recompileDefinesButton.SetEnabled(false);
             revertDefinesButton.SetEnabled(false);
+        }
+
+        void ShowGraphicsSettingsSection(BuildProfile profile, VisualElement root)
+        {
+            var graphicsSettingsSection = root.Q<VisualElement>("editor-graphics-settings");
+            graphicsSettingsSection.Show();
+
+            var graphicsSettingsTitle = root.Q<Label>("graphics-settings-label");
+            graphicsSettingsTitle.text = TrText.graphicsSettings;
+
+            BuildProfileGraphicsSettingsOverridesView.CreateGUI(profile, root);
+            BuildProfileQualitySettingsOverridesView.CreateGUI(profile, root);
         }
     }
 }

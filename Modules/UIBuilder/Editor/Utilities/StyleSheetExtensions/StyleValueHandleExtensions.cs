@@ -35,6 +35,10 @@ namespace Unity.UI.Builder
                     index = to.AddValueToArray(from.GetString(valueHandle)); break;
                 case StyleValueType.Enum:
                     index = to.AddValueToArray(from.GetEnum(valueHandle)); break;
+                case StyleValueType.Function:
+                    index = to.AddValueToArray(from.GetFunction(valueHandle)); break;
+                case StyleValueType.Variable:
+                    index = to.AddValueToArray(from.GetVariable(valueHandle)); break;
             }
 
             return index;
@@ -135,7 +139,7 @@ namespace Unity.UI.Builder
             if (valueHandle.valueType == StyleValueType.Enum)
             {
                 var colorName = styleSheet.ReadAsString(valueHandle);
-                StyleSheetColor.TryGetColor(colorName.ToLower(), out var value);
+                StyleSheetColor.TryGetColor(colorName.ToLowerInvariant(), out var value);
                 return value;
             }
             return styleSheet.ReadColor(valueHandle);
@@ -212,6 +216,56 @@ namespace Unity.UI.Builder
                 {
                     x = new Dimension(0f, Dimension.Unit.Degree)
                 };
+            }
+        }
+
+        public static BackgroundRepeat GetBackgroundRepeat(this StyleSheet styleSheet, StyleProperty styleProperty)
+        {
+            int valCount = styleProperty.values.Length;
+
+            if (valCount > 0)
+            {
+                var xval = new StylePropertyValue() { handle = styleProperty.values[0], sheet = styleSheet };
+                var yval = valCount > 1 ? new StylePropertyValue() { handle = styleProperty.values[1], sheet = styleSheet } : default;
+
+                return StylePropertyReader.ReadBackgroundRepeat(valCount, xval, yval);
+            }
+            else
+            {
+                return new BackgroundRepeat(Repeat.NoRepeat, Repeat.NoRepeat);
+            }
+        }
+
+        public static BackgroundSize GetBackgroundSize(this StyleSheet styleSheet, StyleProperty styleProperty)
+        {
+            int valCount = styleProperty.values.Length;
+
+            if (valCount > 0)
+            {
+                var xval = new StylePropertyValue() { handle = styleProperty.values[0], sheet = styleSheet };
+                var yval = valCount > 1 ? new StylePropertyValue() { handle = styleProperty.values[1], sheet = styleSheet } : default;
+
+                return StylePropertyReader.ReadBackgroundSize(valCount, xval, yval);
+            }
+            else
+            {
+                return new BackgroundSize();
+            }
+        }
+
+        public static BackgroundPosition GetBackgroundPosition(this StyleSheet styleSheet, StyleProperty styleProperty, BackgroundPositionKeyword keyword)
+        {
+            int valCount = styleProperty.values.Length;
+            if (valCount > 0)
+            {
+                var xval = new StylePropertyValue() { handle = styleProperty.values[0], sheet = styleSheet };
+                var yval = valCount > 1 ? new StylePropertyValue() { handle = styleProperty.values[1], sheet = styleSheet } : default;
+
+                return StylePropertyReader.ReadBackgroundPosition(valCount, xval, yval, keyword);
+            }
+            else
+            {
+                return new BackgroundPosition();
             }
         }
 

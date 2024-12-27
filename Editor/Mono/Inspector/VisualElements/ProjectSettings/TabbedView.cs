@@ -25,6 +25,8 @@ namespace UnityEditor.UIElements.ProjectSettings
         readonly VisualElement m_Content;
 
         readonly List<TabButton> m_Tabs = new();
+        internal IEnumerable<TabButton> tabs => m_Tabs;
+
         TabButton m_ActiveTab;
         internal TabButton ActiveTab => m_ActiveTab;
         internal int ActiveTabIndex => m_ActiveTab != null ? m_Tabs.IndexOf(m_ActiveTab) : -1;
@@ -220,20 +222,11 @@ namespace UnityEditor.UIElements.ProjectSettings
 
         void SelectTab(TabButton tabButton)
         {
-            VisualElement target = tabButton.Target;
-
             tabButton.Select();
-            if (target != null)
-                target.style.display = DisplayStyle.Flex;
         }
 
         void DeselectTab(TabButton tabButton)
         {
-            VisualElement target = tabButton.Target;
-
-            if (target != null)
-                target.style.display = DisplayStyle.None;
-
             tabButton.Deselect();
         }
     }

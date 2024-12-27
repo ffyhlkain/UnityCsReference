@@ -3,12 +3,25 @@
 // https://unity3d.com/legal/licenses/Unity_Reference_Only_License
 
 using System;
+using System.Collections.Generic;
 using Unity.Profiling;
 using UnityEngine.UIElements.UIR;
 
 namespace UnityEngine.UIElements
 {
-    internal class UIRRepaintUpdater : BaseVisualTreeUpdater
+    interface IPanelRenderer
+    {
+        /// <summary>
+        /// Requests the fragment shader to output sRGB-encoded values. The project must be in linear color space and
+        /// drawInCameras must be false for this flag to have an effect. Otherwise, it is ignored.
+        /// </summary>
+        bool forceGammaRendering { get; set; }
+        uint vertexBudget { get; set; }
+        void Reset();
+        void Render();
+    }
+
+    class UIRRepaintUpdater : BaseVisualTreeUpdater, IPanelRenderer
     {
         BaseVisualElementPanel attachedPanel;
         internal RenderChain renderChain; // May be recreated any time.
@@ -21,6 +34,37 @@ namespace UnityEngine.UIElements
         private static readonly string s_Description = "Update Rendering";
         private static readonly ProfilerMarker s_ProfilerMarker = new ProfilerMarker(s_Description);
         public override ProfilerMarker profilerMarker => s_ProfilerMarker;
+
+        bool m_ForceGammaRendering;
+
+        public bool forceGammaRendering
+        {
+            get => m_ForceGammaRendering;
+            set
+            {
+                if (m_ForceGammaRendering == value)
+                    return;
+
+                m_ForceGammaRendering = value;
+                DestroyRenderChain();
+            }
+        }
+
+        uint m_VertexBudget;
+
+        public uint vertexBudget
+        {
+            get => m_VertexBudget;
+            set
+            {
+                if (m_VertexBudget == value)
+                    return;
+
+                m_VertexBudget = value;
+                DestroyRenderChain();
+            }
+        }
+
         public bool drawStats { get; set; }
         public bool breakBatches { get; set; }
 
@@ -75,7 +119,7 @@ namespace UnityEngine.UIElements
             renderChain.device.breakBatches = breakBatches;
         }
 
-        void Render()
+        public void Render()
         {
             // Since the calls to Update and Render can be disjoint, this check seems reasonable.
             if (renderChain == null)
@@ -103,7 +147,7 @@ namespace UnityEngine.UIElements
                 if (recreate)
                     it.Current.Value.atlas?.Reset();
                 else
-                    (it.Current.Value.GetUpdater(VisualTreeUpdatePhase.Repaint) as UIRRepaintUpdater)?.DestroyRenderChain();
+                    it.Current.Value.panelRenderer.Reset();
 
             if (!recreate)
                 UIRenderDevice.FlushAllPendingDeviceDisposes();
@@ -124,12 +168,11 @@ namespace UnityEngine.UIElements
                 return;
 
             attachedPanel = panel;
-            attachedPanel.SetRenderAction(Render);
             attachedPanel.isFlatChanged += OnPanelIsFlatChanged;
             attachedPanel.atlasChanged += OnPanelAtlasChanged;
-            attachedPanel.standardShaderChanged += OnPanelStandardShaderChanged;
-            attachedPanel.standardWorldSpaceShaderChanged += OnPanelStandardWorldSpaceShaderChanged;
             attachedPanel.hierarchyChanged += OnPanelHierarchyChanged;
+            Debug.Assert(attachedPanel.panelRenderer == null);
+            attachedPanel.panelRenderer = this;
 
             if (panel is BaseRuntimePanel runtimePanel)
                 runtimePanel.drawsInCamerasChanged += OnPanelDrawsInCamerasChanged;
@@ -147,10 +190,9 @@ namespace UnityEngine.UIElements
 
             attachedPanel.isFlatChanged -= OnPanelIsFlatChanged;
             attachedPanel.atlasChanged -= OnPanelAtlasChanged;
-            attachedPanel.standardShaderChanged -= OnPanelStandardShaderChanged;
-            attachedPanel.standardWorldSpaceShaderChanged -= OnPanelStandardWorldSpaceShaderChanged;
             attachedPanel.hierarchyChanged -= OnPanelHierarchyChanged;
-            attachedPanel.SetRenderAction(null);
+            Debug.Assert(attachedPanel.panelRenderer == this);
+            attachedPanel.panelRenderer = null;
             attachedPanel = null;
         }
 
@@ -160,13 +202,11 @@ namespace UnityEngine.UIElements
 
             renderChain = CreateRenderChain();
             renderChain.UIEOnChildAdded(attachedPanel.visualTree);
-
-            OnPanelStandardShaderChanged();
-            if (panel.contextType == ContextType.Player)
-                OnPanelStandardWorldSpaceShaderChanged();
         }
 
-        internal void DestroyRenderChain()
+        public void Reset() => DestroyRenderChain();
+
+        void DestroyRenderChain()
         {
             if (renderChain == null)
                 return;
@@ -191,57 +231,25 @@ namespace UnityEngine.UIElements
             DestroyRenderChain();
         }
 
-        void OnPanelHierarchyChanged(VisualElement ve, HierarchyChangeType changeType)
+        void OnPanelHierarchyChanged(VisualElement ve, HierarchyChangeType changeType, IReadOnlyList<VisualElement> additionalContext = null)
         {
             if (renderChain == null)
                 return;
 
             switch (changeType)
             {
-                case HierarchyChangeType.Add:
+                case HierarchyChangeType.AddedToParent:
                     renderChain.UIEOnChildAdded(ve);
                     break;
 
-                case HierarchyChangeType.Remove:
+                case HierarchyChangeType.RemovedFromParent:
                     renderChain.UIEOnChildRemoving(ve);
                     break;
 
-                case HierarchyChangeType.Move:
+                case HierarchyChangeType.ChildrenReordered:
                     renderChain.UIEOnChildrenReordered(ve);
                     break;
             }
-        }
-
-        void OnPanelStandardShaderChanged()
-        {
-            if (renderChain == null)
-                return;
-
-            Shader shader = panel.standardShader;
-            if (shader == null)
-            {
-                shader = Shader.Find(UIRUtility.k_DefaultShaderName);
-                Debug.Assert(shader != null, "Failed to load UIElements default shader");
-                if (shader != null)
-                    shader.hideFlags |= HideFlags.DontSaveInEditor;
-            }
-            renderChain.defaultShader = shader;
-        }
-
-        void OnPanelStandardWorldSpaceShaderChanged()
-        {
-            if (renderChain == null)
-                return;
-
-            Shader shader = panel.standardWorldSpaceShader;
-            if (shader == null)
-            {
-                shader = Shader.Find(UIRUtility.k_DefaultWorldSpaceShaderName);
-                Debug.Assert(shader != null, "Failed to load UIElements default world-space shader");
-                if (shader != null)
-                    shader.hideFlags |= HideFlags.DontSaveInEditor;
-            }
-            renderChain.defaultWorldSpaceShader = shader;
         }
 
         void ResetAllElementsDataRecursive(VisualElement ve)

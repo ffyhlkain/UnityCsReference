@@ -11,7 +11,7 @@ using UnityEditor.Scripting.ScriptCompilation;
 namespace UnityEditor.PackageManager.UI.Internal
 {
     [Serializable]
-    internal class UpmVersionList : BaseVersionList, ISerializationCallbackReceiver
+    internal class UpmVersionList : BaseVersionList
     {
         [SerializeField]
         private List<UpmPackageVersion> m_Versions;
@@ -20,276 +20,129 @@ namespace UnityEditor.PackageManager.UI.Internal
         private int m_NumUnloadedVersions;
         public override int numUnloadedVersions => m_NumUnloadedVersions;
 
-        public override IEnumerable<IPackageVersion> key
-        {
-            get
-            {
-                var installed = this.installed;
-                var resolvedLifecycleVersion = this.resolvedLifecycleVersion;
-                var resolvedLifecycleNextVersion = this.resolvedLifecycleNextVersion;
-
-                // if installed is experimental, return all versions higher than it
-                if (installed?.HasTag(PackageTag.Experimental) == true)
-                    return m_Versions.Where(v => v == resolvedLifecycleVersion || v == resolvedLifecycleNextVersion
-                        || v.version >= installed.version).Cast<IPackageVersion>();
-
-                var recommended = this.recommended;
-                var keyVersions = new HashSet<IPackageVersion>();
-
-                if (recommended != null)
-                    keyVersions.Add(recommended);
-
-                if (installed != null)
-                    keyVersions.Add(installed);
-
-                if (resolvedLifecycleVersion != null)
-                {
-                    keyVersions.Add(resolvedLifecycleVersion);
-
-                    // if the lifecycle.version is Release Candidate for this Editor version, still need to check if the release version is available
-                    //  and add that
-                    if (resolvedLifecycleVersion.HasTag(PackageTag.ReleaseCandidate) && resolvedLifecycleVersion.version?.HasPreReleaseVersionTag() == true)
-                    {
-                        var latestReleasePatchOfUnityLifecycleVersion = m_Versions.LastOrDefault(v => !v.HasTag(PackageTag.PreRelease | PackageTag.ReleaseCandidate | PackageTag.Experimental) &&
-                            (v.version?.IsPatchOf(resolvedLifecycleVersion.version) == true || v.version?.IsMajorMinorPatchEqualTo(resolvedLifecycleVersion.version) == true));
-
-                        if (latestReleasePatchOfUnityLifecycleVersion != null)
-                            keyVersions.Add(latestReleasePatchOfUnityLifecycleVersion);
-                    }
-                }
-                // if no version is set but installed is release, check if there exists a patch of it to add
-                else if (installed?.HasTag(PackageTag.Release) == true)
-                {
-                    var latestReleasePatchOfInstalled = m_Versions.LastOrDefault(v => v.HasTag(PackageTag.Release)
-                        && v.version?.IsPatchOf(installed.version) == true);
-
-                    if (latestReleasePatchOfInstalled != null)
-                        keyVersions.Add(latestReleasePatchOfInstalled);
-                }
-
-                // now add the proper Pre-Release version to key versions; latestUnityLifecycleNextVersion takes priority
-                if (resolvedLifecycleNextVersion != null)
-                    keyVersions.Add(resolvedLifecycleNextVersion);
-                // if nextVersion is not set but the installed version is Pre-Release, add the latest iteration on it to key versions
-                else if (installed?.HasTag(PackageTag.PreRelease) == true)
-                {
-                    var keyPreRelease = m_Versions.LastOrDefault(v => v.HasTag(PackageTag.PreRelease)
-                        && (v.version?.IsHigherPreReleaseIterationOf(installed.version) == true));
-
-                    if (keyPreRelease != null)
-                        keyVersions.Add(keyPreRelease);
-                }
-
-                if (!keyVersions.Any())
-                    keyVersions.Add(primary);
-
-                return keyVersions.OrderBy(v => v.version);
-            }
-        }
-
         [SerializeField]
         private int m_InstalledIndex;
         public override IPackageVersion installed => m_InstalledIndex < 0 ? null : m_Versions[m_InstalledIndex];
 
         [SerializeField]
-        private string m_LifecycleVersionString;
-        private SemVersion? m_LifecycleVersion;
-        internal string lifecycleVersionString => m_LifecycleVersionString;
-
-        // the lifeCycle version from the Editor manifest, if it exists
-        public override IPackageVersion lifecycleVersion
-        {
-            get
-            {
-                return m_LifecycleVersion == null ? null : m_Versions.FirstOrDefault(v => !v.HasTag(PackageTag.Custom | PackageTag.Local | PackageTag.Git) && v.version == m_LifecycleVersion);
-            }
-        }
-
-        // the latest patch of lifecycle version if it exists, or the exact
-        //  version if version is set to a pre-release
-        private IPackageVersion resolvedLifecycleVersion
-        {
-            get
-            {
-                // if it has a -pre tag in the version, it's a Release Candidate, and we must return the exact version which matches, not a
-                //  higher patch or iteration
-                if (m_LifecycleVersion?.HasPreReleaseVersionTag() == true)
-                    return m_Versions.LastOrDefault(v => v.HasTag(PackageTag.ReleaseCandidate) &&
-                        v.version == m_LifecycleVersion);
-                // otherwise, it's either Release or tagged as Release Candidate because Editor is in Alpha or Beta, and we should
-                //  take the latest patch of it
-                else
-                    return m_Versions.LastOrDefault(v => !v.HasTag(PackageTag.PreRelease | PackageTag.Experimental) &&
-                        ((v.version?.IsPatchOf(m_LifecycleVersion) == true) || v.version == m_LifecycleVersion));
-            }
-        }
+        private int m_RecommendedIndex;
+        public override IPackageVersion recommended => m_RecommendedIndex < 0 ? null : m_Versions[m_RecommendedIndex];
 
         [SerializeField]
-        private string m_LifecycleNextVersionString;
-        private SemVersion? m_LifecycleNextVersion;
-        internal string lifecycleNextVersion => m_LifecycleNextVersionString;
-        private IPackageVersion resolvedLifecycleNextVersion
-        {
-            get
-            {
-                return m_Versions.LastOrDefault(v => v.version?.IsEqualOrPatchOf(m_LifecycleNextVersion) == true);
-            }
-        }
-
-        public void OnBeforeSerialize()
-        {
-            // do nothing
-        }
-
-        public void OnAfterDeserialize()
-        {
-            SemVersionParser.TryParse(m_LifecycleVersionString, out m_LifecycleVersion);
-            SemVersionParser.TryParse(m_LifecycleNextVersionString, out m_LifecycleNextVersion);
-        }
+        private int m_SuggestedUpdateIndex;
+        public override IPackageVersion suggestedUpdate => m_SuggestedUpdateIndex < 0 ? null : m_Versions[m_SuggestedUpdateIndex];
 
         public override IPackageVersion latest => m_Versions.LastOrDefault();
 
-        public override IPackageVersion recommended
-        {
-            get
-            {
-                var installed = this.installed;
-                if (installed != null && installed.HasTag(PackageTag.VersionLocked))
-                    return installed;
-
-                if (m_Versions.Any(v => v.availableRegistry != RegistryType.UnityRegistry))
-                    return latest;
-
-                // for Unity packages, we should only recommend versions that have been tested with the Editor;
-                // this means they have to be either the lifecycle version or nextVersion in the manifest
-                // lifecycle version will take precedence over nextVersion
-                var resolvedLifecycleVersion = this.resolvedLifecycleVersion;
-                var resolvedLifecycleNextVersion = this.resolvedLifecycleNextVersion;
-
-                var recommendedLifecycleVersion = resolvedLifecycleVersion;
-
-                if (installed == null)
-                    return recommendedLifecycleVersion
-                        ?? resolvedLifecycleNextVersion;
-                // nextVersion, since in pre-release, will only be recommended if it's higher than the installed
-                else
-                {
-                    var useNextVersion = resolvedLifecycleNextVersion != null && resolvedLifecycleNextVersion.version > installed.version;
-                    return recommendedLifecycleVersion
-                        ?? (useNextVersion ? resolvedLifecycleNextVersion : null);
-                }
-            }
-        }
-
         public override IPackageVersion primary => installed ?? recommended ?? latest;
 
-
-        public override bool isNonLifecycleVersionInstalled => CheckIsNonLifecycleVersionInstalled(installed, lifecycleVersion);
-
-        // If the user installs a local, git or embedded package with the same version string as the lifecycle version, it is consider as a non lifecycle version
-        // We also consider that installation as the `lifecycle` version. Patches of lifecycle version are also considered lifecycle version.
-        // We might change this behaviour later
-        internal static bool CheckIsNonLifecycleVersionInstalled(IPackageVersion installed, IPackageVersion lifecycleVersion)
+        private static UpmPackageVersion FindSuggestedUpdate(List<UpmPackageVersion> sortedVersions, UpmPackageVersion installedVersion, UpmPackageVersion recommendedVersion)
         {
-            return installed != null && lifecycleVersion != null && (installed.HasTag(PackageTag.Custom | PackageTag.Git) || installed.version?.IsEqualOrPatchOf(lifecycleVersion.version) != true);
+            if (installedVersion == null || installedVersion.HasTag(PackageTag.InstalledFromPath) || sortedVersions.Count <= 1)
+                return null;
+
+            if (installedVersion.HasTag(PackageTag.Experimental) || sortedVersions.Any(v => v.availableRegistry != RegistryType.UnityRegistry))
+                return sortedVersions.Last().isInstalled ? null : sortedVersions.Last();
+
+            if (recommendedVersion is { isInstalled: false } && recommendedVersion.version >= installedVersion.version)
+                return recommendedVersion;
+
+            var latestSafePatch = GetLatestSafePatch(sortedVersions, installedVersion);
+            return latestSafePatch is { isInstalled: true } ? null : latestSafePatch;
         }
 
-        public override bool hasLifecycleVersion => m_LifecycleVersion != null || m_LifecycleNextVersion != null;
-
-        public override IPackageVersion GetUpdateTarget(IPackageVersion version)
+        // A "safe" patch is a patch that is not lower in safety level (regarding prerelease) compared to the original version. For example,
+        // `1.0.1` is a safe patch for both `1.0.0-pre.0` and `1.0.0`, however
+        // `1.0.1-pre.1` is NOT a safe patch for `1.0.0` but can be considered a safe patch for `1.0.0-pre.0`
+        private static UpmPackageVersion GetLatestSafePatch(IEnumerable<UpmPackageVersion> sortedVersions, UpmPackageVersion version)
         {
-            if (version?.isInstalled == true && version != recommended)
-                return key.LastOrDefault() ?? version;
-            return version;
+            var availableVersions = sortedVersions.Where(i => i != version && !i.HasTag(PackageTag.InstalledFromPath)).ToArray();
+            if (availableVersions.Length == 0)
+                return null;
+            var patchVersionString = SemVersionHelper.MaxSatisfying(version.versionString, availableVersions.Select(v => v.versionString).ToArray(), ResolutionStrategy.HighestPatch, !string.IsNullOrEmpty(version.version?.Prerelease));
+            return string.IsNullOrEmpty(patchVersionString) ? null : availableVersions.LastOrDefault(v => v.versionString == patchVersionString);
         }
 
-        // This function is only used to update the object, not to actually perform the add operation
-        public void AddInstalledVersion(UpmPackageVersion newVersion)
+        private static void AddToSortedVersions(List<UpmPackageVersion> sortedVersions, UpmPackageVersion versionToAdd)
         {
-            if (m_InstalledIndex >= 0)
-            {
-                m_Versions[m_InstalledIndex].SetInstalled(false);
-                if (m_Versions[m_InstalledIndex].HasTag(PackageTag.InstalledFromPath))
-                    m_Versions.RemoveAt(m_InstalledIndex);
-            }
-            newVersion.SetInstalled(true);
-            m_InstalledIndex = AddToSortedVersions(m_Versions, newVersion);
-        }
+            if (versionToAdd == null)
+                return;
 
-        private static int AddToSortedVersions(List<UpmPackageVersion> sortedVersions, UpmPackageVersion versionToAdd)
-        {
             for (var i = 0; i < sortedVersions.Count; ++i)
             {
-                if (versionToAdd.version != null && (sortedVersions[i].version?.CompareTo(versionToAdd.version) ?? -1) < 0)
+                if (sortedVersions[i].version < versionToAdd.version)
                     continue;
-                // note that the difference between this and the previous function is that
-                // two upm package versions could have the the same version but different package id
+
+                // Two upm package versions could have the same version but different package id, when one is installed from path for instance
+                // We only want to overwrite when the package id is exactly the same (either both from the registry, or from the same path)
                 if (sortedVersions[i].packageId == versionToAdd.packageId)
                 {
                     sortedVersions[i] = versionToAdd;
-                    return i;
+                    return;
                 }
                 sortedVersions.Insert(i, versionToAdd);
-                return i;
+                return;
             }
             sortedVersions.Add(versionToAdd);
-            return sortedVersions.Count - 1;
         }
 
-        public UpmVersionList(PackageInfo searchInfo, PackageInfo installedInfo, RegistryType availableRegistry, Dictionary<string, PackageInfo> extraVersions = null)
+        public UpmVersionList(PackageInfo searchInfo, PackageInfo installedInfo, RegistryType availableRegistry, PackageTag tagsToExclude, bool loadAllVersions, Dictionary<string, PackageInfo> extraInfos = null)
         {
             // We prioritize searchInfo over installedInfo, because searchInfo is fetched from the server
             // while installedInfo sometimes only contain local data
             var mainInfo = searchInfo ?? installedInfo;
-            if (mainInfo != null)
+            var allSortedVersions = mainInfo.versions.compatible.Select(versionString =>
             {
-                var mainVersion = new UpmPackageVersion(mainInfo, mainInfo == installedInfo, availableRegistry);
-                m_Versions = mainInfo.versions.compatible.Select(v =>
-                {
-                    SemVersion? version;
-                    SemVersionParser.TryParse(v, out version);
-                    return new UpmPackageVersion(mainInfo, false, version, mainVersion.displayName, availableRegistry);
-                }).ToList();
-                AddToSortedVersions(m_Versions, mainVersion);
+                SemVersionParser.TryParse(versionString, out var parsedVersion);
+                return new UpmPackageVersion(mainInfo, false, parsedVersion, mainInfo.displayName, availableRegistry);
+            }).ToList();
 
-                if (mainInfo != installedInfo && installedInfo != null)
-                    AddInstalledVersion(new UpmPackageVersion(installedInfo, true, availableRegistry));
+            var installedVersion = installedInfo != null ? new UpmPackageVersion(installedInfo, true, availableRegistry) : null;
+            if (installedVersion != null)
+            {
+                AddToSortedVersions(allSortedVersions, installedVersion);
+                if (installedVersion.HasTag(PackageTag.Experimental))
+                    tagsToExclude &= ~(PackageTag.Experimental | PackageTag.PreRelease);
+                else if (installedVersion.HasTag(PackageTag.PreRelease))
+                    tagsToExclude &= ~PackageTag.PreRelease;
             }
-            m_InstalledIndex = m_Versions.FindIndex(v => v.isInstalled);
-            var recommendedVersion = mainInfo?.unityLifecycle?.recommendedVersion;
-            if (string.IsNullOrEmpty(recommendedVersion))
-                recommendedVersion = mainInfo?.unityLifecycle?.version;
-            SetLifecycleVersions(recommendedVersion, mainInfo?.unityLifecycle?.nextVersion);
-            UpdateExtraPackageInfos(extraVersions, availableRegistry);
-            m_NumUnloadedVersions = 0;
-        }
 
-        public UpmVersionList(IEnumerable<UpmPackageVersion> versions, string unityLifecycleInfoVersion = null, string unityLifecycleInfoNextVersion = null, int numUnloadedVersions = 0)
-        {
-            m_Versions = versions?.ToList() ?? new List<UpmPackageVersion>();
-            m_InstalledIndex = m_Versions.FindIndex(v => v.isInstalled);
-            SetLifecycleVersions(unityLifecycleInfoVersion, unityLifecycleInfoNextVersion);
-            m_NumUnloadedVersions = numUnloadedVersions;
-        }
+            var versionsToKeep = allSortedVersions.Where(version => version.isInstalled || !version.HasTag(tagsToExclude)).ToList();
 
-        private void UpdateExtraPackageInfos(Dictionary<string, PackageInfo> extraVersions, RegistryType availableRegistry)
-        {
-            if (extraVersions?.Any() != true)
-                return;
-            foreach (var version in m_Versions.Where(v => !v.isFullyFetched))
-                if (extraVersions.TryGetValue(version.version.ToString(), out var packageInfo))
+            // Since a purchased Upm Package on AssetStore will always be visible when users are on the "My Assets" page,
+            // we are adding a special handling here to at least show one version of the Upm package even if that version
+            // does not match the filtering criteria.
+            // For example, if an Upm package from the Asset Store only contains `Pre-release` versions, but in project
+            // settings "Show Pre-release versions" is not checked, we will only show the latest `Pre-release` version
+            // for the Upm package because we can't hide the whole package.
+            if (versionsToKeep.Count == 0 && allSortedVersions.Count > 0 && availableRegistry == RegistryType.AssetStore)
+                versionsToKeep.Add(allSortedVersions.Last());
+
+            var recommendedVersion = versionsToKeep.Find(v => v.HasTag(PackageTag.Unity) && v.versionString == mainInfo.versions.recommended);
+            var suggestedUpdateVersion = FindSuggestedUpdate(versionsToKeep, installedVersion, recommendedVersion);
+            var numVersionsBeforeUnload = versionsToKeep.Count;
+
+            if (!loadAllVersions && versionsToKeep.Count > 1)
+            {
+                // We want to trim down the amount of versions we keep in memory to a list of key versions (the installed version, suggested update,
+                // recommended version or the latest version if recommended doesn't exist). We do this to save on memory, and also to avoid long
+                // domain reload time, as each version in the memory will need to be serialized on domain reload.
+                var recommendedOrLatest = recommendedVersion ?? versionsToKeep.Last();
+                versionsToKeep.Clear();
+                AddToSortedVersions(versionsToKeep, installedVersion);
+                AddToSortedVersions(versionsToKeep, recommendedOrLatest);
+                AddToSortedVersions(versionsToKeep, suggestedUpdateVersion);
+            }
+
+            foreach (var version in versionsToKeep)
+                if (!version.isFullyFetched && extraInfos?.TryGetValue(version.versionString, out var packageInfo) == true)
                     version.UpdatePackageInfo(packageInfo, availableRegistry);
-        }
 
-        private void SetLifecycleVersions(string unityLifecycleInfoVersion, string unityLifecycleInfoNextVersion)
-        {
-            m_LifecycleVersionString = unityLifecycleInfoVersion;
-            m_LifecycleNextVersionString = unityLifecycleInfoNextVersion;
-
-            if (!string.IsNullOrEmpty(m_LifecycleVersionString))
-                SemVersionParser.TryParse(m_LifecycleVersionString, out m_LifecycleVersion);
-            if (!string.IsNullOrEmpty(m_LifecycleNextVersionString))
-                SemVersionParser.TryParse(m_LifecycleNextVersionString, out m_LifecycleNextVersion);
+            m_Versions = versionsToKeep;
+            m_InstalledIndex = installedVersion != null ? m_Versions.FindIndex(v => v == installedVersion) : -1;
+            m_RecommendedIndex = recommendedVersion != null ? m_Versions.FindIndex(v => v == recommendedVersion) : -1;
+            m_SuggestedUpdateIndex = suggestedUpdateVersion != null ? m_Versions.FindIndex(v => v == suggestedUpdateVersion) : -1;
+            m_NumUnloadedVersions = numVersionsBeforeUnload - versionsToKeep.Count;
         }
 
         public override IEnumerator<IPackageVersion> GetEnumerator()

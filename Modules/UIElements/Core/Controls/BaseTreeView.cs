@@ -5,6 +5,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using Unity.Properties;
 using UnityEngine.Bindings;
@@ -37,6 +38,9 @@ namespace UnityEngine.UIElements
     /// <summary>
     /// Base class for a tree view, a vertically scrollable area that links to, and displays, a list of items organized in a tree.
     /// </summary>
+    /// <remarks>
+    /// For the difference between IDs and indices, refer to <see cref="BaseVerticalCollectionView"/>.
+    /// </remarks>
     public abstract class BaseTreeView : BaseVerticalCollectionView
     {
         internal static readonly BindingId autoExpandProperty = nameof(autoExpand);
@@ -97,6 +101,15 @@ namespace UnityEngine.UIElements
         [ExcludeFromDocs, Serializable]
         public new abstract class UxmlSerializedData : BaseVerticalCollectionView.UxmlSerializedData
         {
+            [Conditional("UNITY_EDITOR")]
+            public new static void Register()
+            {
+                UxmlDescriptionCache.RegisterType(typeof(UxmlSerializedData), new UxmlAttributeNames[]
+                {
+                    new (nameof(autoExpand), "auto-expand"),
+                });
+            }
+
             #pragma warning disable 649
             [SerializeField] bool autoExpand;
             [SerializeField, UxmlIgnore, HideInInspector] UxmlAttributeFlags autoExpand_UxmlAttributeFlags;

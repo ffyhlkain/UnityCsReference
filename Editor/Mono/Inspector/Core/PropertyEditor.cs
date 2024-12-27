@@ -470,7 +470,7 @@ namespace UnityEditor
         [UsedImplicitly]
         protected virtual void Update()
         {
-            ActiveEditorTracker.Internal_GetActiveEditorsNonAlloc(tracker, s_Editors);
+            ActiveEditorTracker.Internal_GetActiveEditorsNonAlloc(tracker, ref s_Editors);
             if (s_Editors.Length == 0)
                 return;
 
@@ -498,14 +498,6 @@ namespace UnityEditor
             return m_AllPropertyEditors.AsEnumerable();
         }
 
-        protected virtual void EnsureAppropriateTrackerIsInUse()
-        {
-            if (m_InspectorMode == InspectorMode.Normal)
-                m_Tracker = ActiveEditorTracker.sharedTracker;
-            else if (m_Tracker is null || m_Tracker.Equals(ActiveEditorTracker.sharedTracker))
-                m_Tracker = new ActiveEditorTracker();
-        }
-
         protected void SetMode(InspectorMode mode)
         {
             if (m_InspectorMode != mode)
@@ -515,12 +507,7 @@ namespace UnityEditor
                 // Clear the editors Element so that a real rebuild is done
                 editorsElement.Clear();
                 m_EditorElementUpdater.Clear();
-
-                EnsureAppropriateTrackerIsInUse();
-
-                m_Tracker.inspectorMode = m_InspectorMode;
-                m_Tracker.ForceRebuild();
-
+                tracker.inspectorMode = mode;
                 m_ResetKeyboardControl = true;
                 SceneView.SetActiveEditorsDirty(true);
             }
@@ -1264,7 +1251,7 @@ namespace UnityEditor
         void InitUITKPreview()
         {
             // Toolbar
-            PrepareToolbar(previewWindow);
+            PrepareToolbar();
             UpdateLabel(previewWindow);
 
             // Dragline
@@ -1306,10 +1293,10 @@ namespace UnityEditor
             dragline.style.marginRight = margin;
         }
 
-        internal void PrepareToolbar(InspectorPreviewWindow toolbar, bool isFloatingPreviewWindow = false)
+        internal void PrepareToolbar(bool isFloatingPreviewWindow = false)
         {
             if(!isFloatingPreviewWindow)
-                CreatePreviewEllipsisMenu(toolbar, this);
+                CreatePreviewEllipsisMenu();
         }
 
         internal void UpdateLabel(InspectorPreviewWindow toolbar)
@@ -1600,7 +1587,7 @@ namespace UnityEditor
 
         protected virtual bool BeginDrawPreviewAndLabels() { return true; }
         protected virtual void EndDrawPreviewAndLabels(Event evt, Rect rect, Rect dragRect) {}
-        protected virtual void CreatePreviewEllipsisMenu(InspectorPreviewWindow window, PropertyEditor editor) {}
+        protected virtual void CreatePreviewEllipsisMenu() {}
 
         protected TwoPaneSplitView m_SplitView = null;
         VisualElement preview = null;
@@ -1698,7 +1685,7 @@ namespace UnityEditor
                     if (GUI.Button(foldoutRect, title, Styles.preDropDown))
                     {
                         EditorUtility.DisplayCustomMenu(foldoutRect, panelOptions, selectedPreview,
-                            OnPreviewSelected, editorsWithPreviews);
+                            OnPreviewSelected, editorsWithPreviews.ToArray());
                     }
                 }
                 else
@@ -1822,7 +1809,7 @@ namespace UnityEditor
 
         private void OnPreviewSelected(object userData, string[] options, int selected)
         {
-            IPreviewable[] availablePreviews = userData as IPreviewable[];
+            var availablePreviews = (IPreviewable[])userData;
             m_SelectedPreview = availablePreviews[selected];
         }
 

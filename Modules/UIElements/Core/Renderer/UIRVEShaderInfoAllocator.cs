@@ -4,7 +4,6 @@
 
 using System;
 using System.Collections.Generic;
-using Unity.Collections;
 
 namespace UnityEngine.UIElements.UIR
 {
@@ -151,31 +150,32 @@ namespace UnityEngine.UIElements.UIR
         }
     }
 
-    internal struct UIRVEShaderInfoAllocator
+    class UIRVEShaderInfoAllocator
     {
         BaseShaderInfoStorage m_Storage;
         BitmapAllocator32 m_TransformAllocator, m_ClipRectAllocator, m_OpacityAllocator, m_ColorAllocator, m_TextSettingsAllocator; // All allocators take pages from the same storage
         bool m_StorageReallyCreated;
+        ColorSpace m_ColorSpace;
 
         static int pageWidth { get { return BitmapAllocator32.kPageWidth; } }
         static int pageHeight { get { return 8; } } // 32*8 = 256, can be stored in a byte
 
         // The page coordinates correspond to the atlas's internal algorithm's results.
         // If that algorithm changes, the new results must be put here to match
-        internal static readonly Vector2Int identityTransformTexel = new Vector2Int(0, 0);
-        internal static readonly Vector2Int infiniteClipRectTexel = new Vector2Int(0, 32);
-        internal static readonly Vector2Int fullOpacityTexel = new Vector2Int(32, 32);
-        internal static readonly Vector2Int clearColorTexel = new Vector2Int(0, 40);
-        internal static readonly Vector2Int defaultTextCoreSettingsTexel = new Vector2Int(32, 0);
+        static readonly Vector2Int identityTransformTexel = new Vector2Int(0, 0);
+        static readonly Vector2Int infiniteClipRectTexel = new Vector2Int(0, 32);
+        static readonly Vector2Int fullOpacityTexel = new Vector2Int(32, 32);
+        static readonly Vector2Int clearColorTexel = new Vector2Int(0, 40);
+        static readonly Vector2Int defaultTextCoreSettingsTexel = new Vector2Int(32, 0);
 
-        internal static readonly Matrix4x4 identityTransformValue = Matrix4x4.identity;
-        internal static readonly Vector4 identityTransformRow0Value = identityTransformValue.GetRow(0);
-        internal static readonly Vector4 identityTransformRow1Value = identityTransformValue.GetRow(1);
-        internal static readonly Vector4 identityTransformRow2Value = identityTransformValue.GetRow(2);
-        internal static readonly Vector4 infiniteClipRectValue = new Vector4(0, 0, 0, 0);
-        internal static readonly Vector4 fullOpacityValue = new Vector4(1, 1, 1, 1);
-        internal static readonly Vector4 clearColorValue = new Vector4(0, 0, 0, 0);
-        internal static readonly TextCoreSettings defaultTextCoreSettingsValue = new TextCoreSettings() {
+        static readonly Matrix4x4 identityTransformValue = Matrix4x4.identity;
+        static readonly Vector4 identityTransformRow0Value = identityTransformValue.GetRow(0);
+        static readonly Vector4 identityTransformRow1Value = identityTransformValue.GetRow(1);
+        static readonly Vector4 identityTransformRow2Value = identityTransformValue.GetRow(2);
+        static readonly Vector4 infiniteClipRectValue = new Vector4(0, 0, 0, 0);
+        static readonly Vector4 fullOpacityValue = new Vector4(1, 1, 1, 1);
+        static readonly Vector4 clearColorValue = new Vector4(0, 0, 0, 0);
+        static readonly TextCoreSettings defaultTextCoreSettingsValue = new TextCoreSettings() {
             faceColor = Color.white,
             outlineColor = Color.clear,
             outlineWidth = 0.0f,
@@ -188,6 +188,38 @@ namespace UnityEngine.UIElements.UIR
 #pragma warning disable 649
         public static readonly BMPAlloc identityTransform, infiniteClipRect, fullOpacity, clearColor, defaultTextCoreSettings;
 #pragma warning restore 649
+
+        static int s_DefaultShaderInfoTextureRefCount;
+        static Texture2D s_DefaultShaderInfoTexture;
+        static void AcquireDefaultShaderInfoTexture()
+        {
+            if (++s_DefaultShaderInfoTextureRefCount == 1)
+            {
+                s_DefaultShaderInfoTexture = new Texture2D(64, 64, TextureFormat.RGBAFloat, false); // No mips
+                s_DefaultShaderInfoTexture.name = "DefaultShaderInfoTexFloat";
+                s_DefaultShaderInfoTexture.hideFlags = HideFlags.HideAndDontSave;
+                s_DefaultShaderInfoTexture.filterMode = FilterMode.Point;
+                s_DefaultShaderInfoTexture.SetPixel(identityTransformTexel.x, identityTransformTexel.y + 0, identityTransformRow0Value);
+                s_DefaultShaderInfoTexture.SetPixel(identityTransformTexel.x, identityTransformTexel.y + 1, identityTransformRow1Value);
+                s_DefaultShaderInfoTexture.SetPixel(identityTransformTexel.x, identityTransformTexel.y + 2, identityTransformRow2Value);
+                s_DefaultShaderInfoTexture.SetPixel(infiniteClipRectTexel.x, infiniteClipRectTexel.y, infiniteClipRectValue);
+                s_DefaultShaderInfoTexture.SetPixel(fullOpacityTexel.x, fullOpacityTexel.y, fullOpacityValue);
+                s_DefaultShaderInfoTexture.SetPixel(defaultTextCoreSettingsTexel.x, defaultTextCoreSettingsTexel.y + 0, Color.white);
+                s_DefaultShaderInfoTexture.SetPixel(defaultTextCoreSettingsTexel.x, defaultTextCoreSettingsTexel.y + 1, Color.clear);
+                s_DefaultShaderInfoTexture.SetPixel(defaultTextCoreSettingsTexel.x, defaultTextCoreSettingsTexel.y + 2, Color.clear);
+                s_DefaultShaderInfoTexture.SetPixel(defaultTextCoreSettingsTexel.x, defaultTextCoreSettingsTexel.y + 3, Color.clear);
+                s_DefaultShaderInfoTexture.Apply(false, true);
+            }
+        }
+
+        static void ReleaseDefaultShaderInfoTexture()
+        {
+            if (--s_DefaultShaderInfoTextureRefCount == 0)
+            {
+                UIRUtility.Destroy(s_DefaultShaderInfoTexture);
+                s_DefaultShaderInfoTexture = null;
+            }
+        }
 
         static Vector2Int AllocToTexelCoord(ref BitmapAllocator32 allocator, BMPAlloc alloc)
         {
@@ -213,13 +245,15 @@ namespace UnityEngine.UIElements.UIR
             {
                 if (m_StorageReallyCreated)
                     return m_Storage.texture;
-                return UIRenderDevice.defaultShaderInfoTexFloat;
+                return s_DefaultShaderInfoTexture;
             }
         }
         public bool internalAtlasCreated { get { return m_StorageReallyCreated; } } // For diagnostics really
 
-        public void Construct()
+        public UIRVEShaderInfoAllocator(ColorSpace colorSpace)
         {
+            m_ColorSpace = colorSpace;
+
             // The default allocs refer to four startup pages to be allocated as below from the atlas
             // once the atlas is used for the first time. The page coordinates correspond to the atlas's
             // internal algorithm's results. If that algorithm changes, the new results must be put here to match
@@ -234,6 +268,8 @@ namespace UnityEngine.UIElements.UIR
             m_ColorAllocator.ForceFirstAlloc((ushort)clearColorTexel.x, (ushort)clearColorTexel.y);
             m_TextSettingsAllocator.Construct(pageHeight, 1, 4);
             m_TextSettingsAllocator.ForceFirstAlloc((ushort)defaultTextCoreSettingsTexel.x, (ushort)defaultTextCoreSettingsTexel.y);
+
+            AcquireDefaultShaderInfoTexture();
         }
 
         void ReallyCreateStorage()
@@ -267,8 +303,8 @@ namespace UnityEngine.UIElements.UIR
             SetTransformValue(identityTransform, identityTransformValue);
             SetClipRectValue(infiniteClipRect, infiniteClipRectValue);
             SetOpacityValue(fullOpacity, fullOpacityValue.w);
-            SetColorValue(clearColor, clearColorValue, false); // color is saturated, no need to check the colorspace
-            SetTextCoreSettingValue(defaultTextCoreSettings, defaultTextCoreSettingsValue, false); // colors are saturated, no need to check the colorspace
+            SetColorValue(clearColor, clearColorValue); // color is saturated, no need to check the colorspace
+            SetTextCoreSettingValue(defaultTextCoreSettings, defaultTextCoreSettingsValue); // colors are saturated, no need to check the colorspace
 
             m_StorageReallyCreated = true;
         }
@@ -279,6 +315,7 @@ namespace UnityEngine.UIElements.UIR
                 m_Storage.Dispose();
             m_Storage = null;
             m_StorageReallyCreated = false;
+            ReleaseDefaultShaderInfoTexture();
         }
 
         public void IssuePendingStorageChanges()
@@ -349,25 +386,25 @@ namespace UnityEngine.UIElements.UIR
             m_Storage.SetTexel(allocXY.x, allocXY.y, new Color(1, 1, 1, opacity));
         }
 
-        public void SetColorValue(BMPAlloc alloc, Color color, bool isEditorContext)
+        public void SetColorValue(BMPAlloc alloc, Color color)
         {
             Debug.Assert(alloc.IsValid());
             var allocXY = AllocToTexelCoord(ref m_ColorAllocator, alloc);
 
-            if(QualitySettings.activeColorSpace == ColorSpace.Linear && !isEditorContext)
+            if (m_ColorSpace == ColorSpace.Linear)
                 m_Storage.SetTexel(allocXY.x, allocXY.y, color.linear);
             else
                 m_Storage.SetTexel(allocXY.x, allocXY.y, color);
         }
 
-        public void SetTextCoreSettingValue(BMPAlloc alloc, TextCoreSettings settings, bool isEditorContext)
+        public void SetTextCoreSettingValue(BMPAlloc alloc, TextCoreSettings settings)
         {
             Debug.Assert(alloc.IsValid());
 
             var allocXY = AllocToTexelCoord(ref m_TextSettingsAllocator, alloc);
             var settingValues = new Color(-settings.underlayOffset.x, settings.underlayOffset.y, settings.underlaySoftness, settings.outlineWidth);
 
-            if (QualitySettings.activeColorSpace == ColorSpace.Linear && !isEditorContext)
+            if (m_ColorSpace == ColorSpace.Linear)
             {
                 m_Storage.SetTexel(allocXY.x, allocXY.y + 0, settings.faceColor.linear);
                 m_Storage.SetTexel(allocXY.x, allocXY.y + 1, settings.outlineColor.linear);
@@ -381,7 +418,6 @@ namespace UnityEngine.UIElements.UIR
             }
 
             m_Storage.SetTexel(allocXY.x, allocXY.y + 3, settingValues);
-
         }
 
         public void FreeTransform(BMPAlloc alloc)

@@ -186,7 +186,7 @@ namespace UnityEngine.UIElements
         /// Apply this option to a VisualElement with multiple nested masks among its descendants. For example, a child element
         /// has the `overflow: hidden;` style with rounded corners or SVG background.\\
         /// \\
-        /// The following illustration shows the number of batches in a single-level masking, a nested masking, and a nested masking with MaskContainer. 
+        /// The following illustration shows the number of batches in a single-level masking, a nested masking, and a nested masking with MaskContainer.
         /// The yellow color indicates the masking elements. The orange color indicates the masking element with MaskContainer applied.
         /// The numbers indicate the number of batches.\\
         /// \\
@@ -245,15 +245,6 @@ namespace UnityEngine.UIElements
         DirtyAll = DirtyGroupTransform | DirtyBoneTransform | DirtyClipWithScissors | DirtyMaskContainer | DirtyDynamicColor,
     }
 
-    // For backwards compatibility with debugger in 2020.1
-    enum PanelClearFlags
-    {
-        None = 0,
-        Color = 1 << 0,
-        Depth = 1 << 1,
-        All = Color | Depth
-    }
-
     struct PanelClearSettings
     {
         public bool clearDepthStencil;
@@ -269,7 +260,7 @@ namespace UnityEngine.UIElements
         public Event repaintEvent { get; set; }
     }
 
-    internal delegate void HierarchyEvent(VisualElement ve, HierarchyChangeType changeType);
+    internal delegate void HierarchyEvent(VisualElement ve, HierarchyChangeType changeType, IReadOnlyList<VisualElement> additionalContext = null);
 
     internal interface IGlobalPanelDebugger
     {
@@ -336,18 +327,24 @@ namespace UnityEngine.UIElements
         /// </summary>
         FocusController focusController { get; }
         /// <summary>
-        /// Returns the top element at this position. Will not return elements with pickingMode set to <see cref="PickingMode.Ignore"/>.
+        /// Finds the top-most VisualElement overlapping the provided point.
         /// </summary>
+        /// <remarks>
+        /// Any VisualElement with [[VisualElement.pickingMode|pickingMode]] set to [[PickingMode.Ignore]] is ignored.
+        /// </remarks>
         /// <param name="point">World coordinates.</param>
-        /// <returns>Top VisualElement at the position. Null if none was found.</returns>
+        /// <returns>The top-most VisualElement overlapping the provided point. Null if none was found.</returns>
         VisualElement Pick(Vector2 point);
 
         /// <summary>
-        /// Returns all elements at this position. Will not return elements with pickingMode set to <see cref="PickingMode.Ignore"/>.
+        /// Finds all VisualElements overlapping the provided point.
         /// </summary>
+        /// <remarks>
+        /// Any VisualElement with [[VisualElement.pickingMode|pickingMode]] set to [[PickingMode.Ignore]] is ignored.
+        /// </remarks>
         /// <param name="point">World coordinates.</param>
-        /// <param name="picked">All Visualelements overlapping this position.</param>
-        /// <returns>Top VisualElement at the position. Null if none was found.</returns>
+        /// <param name="picked">If not null, the list is cleared and filled with all VisualElements that overlap the specified point.</param>
+        /// <returns>The top-most VisualElement overlapping the provided point. Null if none was found.</returns>
         VisualElement PickAll(Vector2 point, List<VisualElement> picked);
 
         /// <summary>
@@ -541,55 +538,9 @@ namespace UnityEngine.UIElements
 
         public float referenceSpritePixelsPerUnit { get; set; } = 100.0f;
 
-        // For backwards compatibility with debugger in 2020.1
-        public PanelClearFlags clearFlags
-        {
-            get
-            {
-                PanelClearFlags flags = PanelClearFlags.None;
-
-                if (clearSettings.clearColor)
-                {
-                    flags |= PanelClearFlags.Color;
-                }
-
-                if (clearSettings.clearDepthStencil)
-                {
-                    flags |= PanelClearFlags.Depth;
-                }
-
-                return flags;
-            }
-            set
-            {
-                var settings = clearSettings;
-                settings.clearColor = (value & PanelClearFlags.Color) == PanelClearFlags.Color;
-                settings.clearDepthStencil = (value & PanelClearFlags.Depth) == PanelClearFlags.Depth;
-                clearSettings = settings;
-            }
-        }
-
         internal PanelClearSettings clearSettings { get; set; } = new PanelClearSettings { clearDepthStencil = true, clearColor = true, color = Color.clear };
 
-        uint m_VertexBudget = 0;
-
-
-        internal uint vertexBudget
-        {
-            get
-            {
-                return m_VertexBudget;
-            }
-            set
-            {
-                //early return to prevent trashing the render chain.
-                if (m_VertexBudget == value)
-                    return;
-
-                m_VertexBudget = value;
-                (GetUpdater(VisualTreeUpdatePhase.Repaint) as UIRRepaintUpdater).DestroyRenderChain();
-            }
-        }
+        internal IPanelRenderer panelRenderer;
 
         internal bool duringLayoutPhase { get; set; }
 
@@ -638,7 +589,7 @@ namespace UnityEngine.UIElements
             [VisibleToOtherModules("UnityEditor.UIBuilderModule")]
             set;
         }
-        public abstract ContextType contextType { get; protected set; }
+        public abstract ContextType contextType { get; }
         public abstract VisualElement Pick(Vector2 point);
         public abstract VisualElement PickAll(Vector2 point, List<VisualElement> picked);
 
@@ -654,6 +605,11 @@ namespace UnityEngine.UIElements
         internal VisualElement GetTopElementUnderPointer(int pointerId)
         {
             return m_TopElementUnderPointers.GetTopElementUnderPointer(pointerId);
+        }
+
+        internal void RemoveElementFromPointerCache(VisualElement e)
+        {
+            m_TopElementUnderPointers.RemoveElementUnderPointer(e);
         }
 
         internal VisualElement RecomputeTopElementUnderPointer(int pointerId, Vector2 pointerPos, EventBase triggerEvent)
@@ -682,29 +638,9 @@ namespace UnityEngine.UIElements
             m_TopElementUnderPointers.SetTemporaryElementUnderPointer(null, pointerId, triggerEvent);
         }
 
-        internal void CommitElementUnderPointers()
+        internal bool CommitElementUnderPointers()
         {
-            m_TopElementUnderPointers.CommitElementUnderPointers(dispatcher, contextType);
-        }
-
-        internal abstract Shader standardShader { get; set; }
-
-        internal virtual Shader standardWorldSpaceShader
-        {
-            get { return null; }
-            set {}
-        }
-
-        internal event Action standardShaderChanged, standardWorldSpaceShaderChanged;
-
-        protected void InvokeStandardShaderChanged()
-        {
-            if (standardShaderChanged != null) standardShaderChanged();
-        }
-
-        protected void InvokeStandardWorldSpaceShaderChanged()
-        {
-            if (standardWorldSpaceShaderChanged != null) standardWorldSpaceShaderChanged();
+            return m_TopElementUnderPointers.CommitElementUnderPointers(dispatcher, contextType);
         }
 
         internal event Action isFlatChanged;
@@ -722,7 +658,25 @@ namespace UnityEngine.UIElements
                     return;
 
                 m_IsFlat = value;
+                SetSpecializedHierarchyFlagsUpdater();
                 isFlatChanged?.Invoke();
+            }
+        }
+
+        internal void SetSpecializedHierarchyFlagsUpdater()
+        {
+            var updater = GetUpdater(VisualTreeUpdatePhase.TransformClip);
+            var isWorldSpaceUpdater = updater is VisualTreeWorldSpaceHierarchyFlagsUpdater;
+
+            if (isFlat)
+            {
+                if (isWorldSpaceUpdater)
+                    SetUpdater(new VisualTreeHierarchyFlagsUpdater(), VisualTreeUpdatePhase.TransformClip);
+            }
+            else
+            {
+                if (!isWorldSpaceUpdater)
+                    SetUpdater(new VisualTreeWorldSpaceHierarchyFlagsUpdater(), VisualTreeUpdatePhase.TransformClip);
             }
         }
 
@@ -730,20 +684,18 @@ namespace UnityEngine.UIElements
         protected void InvokeAtlasChanged() { atlasChanged?.Invoke(); }
         public abstract AtlasBase atlas { get; set; }
 
-        internal event Action<Material> updateMaterial;
-        internal void InvokeUpdateMaterial(Material mat) { updateMaterial?.Invoke(mat); } // TODO: Actually call this!
-
         internal event HierarchyEvent hierarchyChanged;
 
-        internal void InvokeHierarchyChanged(VisualElement ve, HierarchyChangeType changeType)
+        internal void InvokeHierarchyChanged(VisualElement ve, HierarchyChangeType changeType, IReadOnlyList<VisualElement> additionalContext = null)
         {
-            if (hierarchyChanged != null) hierarchyChanged(ve, changeType);
+            if (hierarchyChanged != null) hierarchyChanged(ve, changeType, additionalContext);
         }
 
         internal event Action<IPanel> beforeUpdate;
         internal void InvokeBeforeUpdate() { beforeUpdate?.Invoke(this); }
 
-        internal void UpdateElementUnderPointers()
+        // returns true if elements under pointer have changed
+        internal bool UpdateElementUnderPointers()
         {
             foreach (var pointerId in PointerId.hoveringPointers)
             {
@@ -764,7 +716,7 @@ namespace UnityEngine.UIElements
                 }
             }
 
-            CommitElementUnderPointers();
+            return CommitElementUnderPointers();
         }
 
         void IGroupBox.OnOptionAdded(IGroupBoxOption option) { /* Nothing to do here. */ }
@@ -773,9 +725,7 @@ namespace UnityEngine.UIElements
         public IPanelDebug panelDebug { get; set; }
         public ILiveReloadSystem liveReloadSystem { get; set; }
 
-        Action m_RenderAction;
-        internal void SetRenderAction(Action action) => m_RenderAction = action;
-        public virtual void Render() => m_RenderAction?.Invoke();
+        public virtual void Render() => panelRenderer.Render();
     }
 
     // Strategy to initialize the editor updater
@@ -822,6 +772,105 @@ namespace UnityEngine.UIElements
             get { return m_RootContainer; }
         }
 
+        // For UI Test Framework.
+        internal class UIFrameState
+        {
+            internal virtual long[] updatersFrameCount { get; }
+
+            internal virtual long schedulerFrameCount { get; }
+
+            internal virtual bool isPanelDirty { get; }
+
+            internal virtual ContextType panelContextType { get; }
+
+            internal virtual long[] editorUpdatersFrameCount { get; }
+            internal static int[] updaterSubsetForEditor = new int[]
+            {
+                (int)VisualTreeUpdatePhase.Bindings,
+                (int)VisualTreeUpdatePhase.DataBinding,
+                (int)VisualTreeUpdatePhase.Animation
+            };
+
+            internal UIFrameState() { }
+
+            internal UIFrameState(Panel panel)
+            {
+                isPanelDirty = panel.isDirty;
+                panelContextType = panel.contextType;
+
+                schedulerFrameCount = panel.scheduler.FrameCount;
+                updatersFrameCount = panel.visualTreeUpdater.GetUpdatersFrameCount();
+                editorUpdatersFrameCount = panel.visualTreeUpdater.visualTreeEditorUpdater.GetUpdatersFrameCount();
+            }
+
+            public static bool operator >(UIFrameState leftOperand, UIFrameState rightOperand)
+            {
+                return leftOperand.HasFullUIFrameOccurredSince(rightOperand);
+            }
+
+            public static bool operator <(UIFrameState leftOperand, UIFrameState rightOperand)
+            {
+                return rightOperand.HasFullUIFrameOccurredSince(leftOperand);
+            }
+
+            // Returns true if this UIFrameState is greater than the provided reference UIFrameState, false otherwise.
+            private bool HasFullUIFrameOccurredSince(UIFrameState reference)
+            {
+                if (this.panelContextType != reference.panelContextType)
+                {
+                    throw new NotSupportedException("Comparison is only valid for frames with the same ContextType.");
+                }
+
+                // Compare the scheduler frame.
+                if (this.schedulerFrameCount <= reference.schedulerFrameCount)
+                {
+                    return false;
+                }
+
+                // Compare the VisualTreeUpdater frames.
+                if (!this.isPanelDirty && this.panelContextType == ContextType.Editor)
+                {
+                    // If the context is Editor and the panel is currently not dirty, only check a subset of the updater frames.
+                    for (int i = 0; i < updaterSubsetForEditor.Length; i++)
+                    {
+                        if (this.updatersFrameCount[updaterSubsetForEditor[i]] <= reference.updatersFrameCount[updaterSubsetForEditor[i]])
+                        {
+                            return false;
+                        }
+                    }
+                }
+                else
+                {
+                    for (int i = 0; i < this.updatersFrameCount.Length; i++)
+                    {
+                        if (this.updatersFrameCount[i] <= reference.updatersFrameCount[i])
+                        {
+                            return false;
+                        }
+                    }
+                }
+
+                if (this.panelContextType == ContextType.Editor)
+                {
+                    // Compare the VisualTreeEditorUpdater frames.
+                    for (int i = 0; i < this.editorUpdatersFrameCount.Length; i++)
+                    {
+                        if (this.editorUpdatersFrameCount[i] <= reference.editorUpdatersFrameCount[i])
+                        {
+                            return false;
+                        }
+                    }
+                }
+                return true;
+            }
+        }
+
+        // For UI Test Framework.
+        internal UIFrameState GetFrameState()
+        {
+            return new UIFrameState(this);
+        }
+
         public sealed override EventDispatcher dispatcher { get; set; }
 
         TimerEventScheduler m_Scheduler;
@@ -857,7 +906,7 @@ namespace UnityEngine.UIElements
 
         public override ScriptableObject ownerObject { get; protected set; }
 
-        public override ContextType contextType { get; protected set; }
+        public override ContextType contextType { get; }
 
         public override SavePersistentViewData saveViewData { get; set; }
 
@@ -886,7 +935,7 @@ namespace UnityEngine.UIElements
 
         public void ResetRendering()
         {
-            (GetUpdater(VisualTreeUpdatePhase.Repaint) as UIRRepaintUpdater)?.DestroyRenderChain();
+            panelRenderer?.Reset();
             atlas?.Reset();
         }
 
@@ -997,21 +1046,6 @@ namespace UnityEngine.UIElements
         internal override uint repaintVersion => m_RepaintVersion;
         internal override uint hierarchyVersion => m_HierarchyVersion;
 
-        private Shader m_StandardShader;
-
-        internal override Shader standardShader
-        {
-            get { return m_StandardShader; }
-            set
-            {
-                if (m_StandardShader != value)
-                {
-                    m_StandardShader = value;
-                    InvokeStandardShaderChanged();
-                }
-            }
-        }
-
         private AtlasBase m_Atlas;
 
         public override AtlasBase atlas
@@ -1037,6 +1071,7 @@ namespace UnityEngine.UIElements
 
         public Panel(ScriptableObject ownerObject, ContextType contextType, EventDispatcher dispatcher, InitEditorUpdaterFunction initEditorUpdater = null)
         {
+
             this.ownerObject = ownerObject;
             this.contextType = contextType;
             this.dispatcher = dispatcher;
@@ -1044,7 +1079,10 @@ namespace UnityEngine.UIElements
             cursorManager = new CursorManager();
             contextualMenuManager = null;
             dataBindingManager = new DataBindingManager(this);
+
             m_VisualTreeUpdater = new VisualTreeUpdater(this);
+            SetSpecializedHierarchyFlagsUpdater();
+
             var initFunc = initEditorUpdater ?? initEditorUpdaterFunc;
             initFunc.Invoke(this, m_VisualTreeUpdater);
             m_RootContainer = contextType == ContextType.Editor ? new EditorPanelRootElement() : new PanelRootElement();
@@ -1056,7 +1094,7 @@ namespace UnityEngine.UIElements
 
             CreateMarkers();
 
-            InvokeHierarchyChanged(visualTree, HierarchyChangeType.Add);
+            InvokeHierarchyChanged(visualTree, HierarchyChangeType.AddedToParent);
             atlas = new DynamicAtlas();
         }
 
@@ -1091,7 +1129,8 @@ namespace UnityEngine.UIElements
             return PickAll(root, point);
         }
 
-        private static VisualElement PickAll(VisualElement root, Vector2 point, List<VisualElement> picked = null, bool includeIgnoredElement = false)
+        // For tests only.
+        internal static VisualElement PickAll(VisualElement root, Vector2 point, List<VisualElement> picked = null, bool includeIgnoredElement = false)
         {
             s_MarkerPickAll.Begin();
             var result = PerformPick(root, point, picked, includeIgnoredElement);
@@ -1233,7 +1272,7 @@ namespace UnityEngine.UIElements
 
         public override void UpdateAssetTrackers()
         {
-            liveReloadSystem.Update();
+            m_VisualTreeUpdater.visualTreeEditorUpdater.UpdateVisualTreePhase(VisualTreeEditorUpdatePhase.AssetChange);
         }
 
 
@@ -1305,6 +1344,7 @@ namespace UnityEngine.UIElements
             }
 
             panelDebug?.Refresh();
+            (panelDebug?.debuggerOverlayPanel as Panel)?.Repaint(e);
         }
 
         public override void Render()
@@ -1312,6 +1352,8 @@ namespace UnityEngine.UIElements
             m_MarkerRender.Begin();
             base.Render();
             m_MarkerRender.End();
+
+            (panelDebug?.debuggerOverlayPanel as Panel)?.Render();
         }
 
         // Updaters can request an panel invalidation when some callbacks aren't coming from UIElements internally
@@ -1348,6 +1390,8 @@ namespace UnityEngine.UIElements
         {
             return m_VisualTreeUpdater.GetUpdater(phase);
         }
+
+        internal virtual Color HyperlinkColor => Color.blue;
     }
 
     internal abstract class BaseRuntimePanel : Panel
@@ -1411,21 +1455,6 @@ namespace UnityEngine.UIElements
             }
 
             base.Dispose(disposing);
-        }
-
-        private Shader m_StandardWorldSpaceShader;
-
-        internal override Shader standardWorldSpaceShader
-        {
-            get { return m_StandardWorldSpaceShader; }
-            set
-            {
-                if (m_StandardWorldSpaceShader != value)
-                {
-                    m_StandardWorldSpaceShader = value;
-                    InvokeStandardWorldSpaceShaderChanged();
-                }
-            }
         }
 
         internal event Action drawsInCamerasChanged;
@@ -1588,6 +1617,7 @@ namespace UnityEngine.UIElements
         {
             PointerDeviceState.SavePointerPosition(pointerId, position, this, contextType);
         }
+
     }
 
     internal interface IRuntimePanelComponent

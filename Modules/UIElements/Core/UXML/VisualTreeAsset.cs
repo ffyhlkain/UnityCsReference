@@ -36,6 +36,19 @@ namespace UnityEngine.UIElements
         }
 
         [SerializeField]
+        bool m_HasUpdatedUrls;
+
+        /// <summary>
+        /// Indicates that some asset Urls were updated and that if we saved the asset again they could be updated.
+        /// </summary>
+        [VisibleToOtherModules("UnityEditor.UIBuilderModule")]
+        internal bool importerWithUpdatedUrls
+        {
+            get { return m_HasUpdatedUrls; }
+            set { m_HasUpdatedUrls = value; }
+        }
+
+        [SerializeField]
         bool m_ImportedWithWarnings;
 
         /// <summary>
@@ -305,6 +318,9 @@ namespace UnityEngine.UIElements
         [VisibleToOtherModules("UnityEditor.UIBuilderModule")]
         internal void RemoveElementAndDependencies(VisualElementAsset asset)
         {
+            if (asset == null)
+                return;
+
             m_VisualElementAssets.Remove(asset);
             RemoveUxmlObjectEntryDependencies(asset.id);
         }
@@ -333,14 +349,14 @@ namespace UnityEngine.UIElements
             {
                 entry = new UxmlObjectEntry(parent.id, new List<UxmlObjectAsset>());
                 m_UxmlObjectEntries.Add(entry);
-                m_UxmlObjectIds.Add(GetNextUxmlObjectId(parent.id));
             }
 
             if (string.IsNullOrEmpty(fieldUxmlName))
             {
                 var newAsset = new UxmlObjectAsset(fullTypeName, false, xmlNamespace);
                 newAsset.parentId = parent.id;
-                newAsset.id = GetNextUxmlObjectId(parent.id);
+                newAsset.id = GetNextUxmlAssetId(parent.id);
+                m_UxmlObjectIds.Add(newAsset.id);
                 entry.uxmlObjectAssets.Add(newAsset);
                 return newAsset;
             }
@@ -351,15 +367,18 @@ namespace UnityEngine.UIElements
                 fieldAsset = new UxmlObjectAsset(fieldUxmlName, true, xmlNamespace);
                 entry.uxmlObjectAssets.Add(fieldAsset);
                 fieldAsset.parentId = parent.id;
-                fieldAsset.id = GetNextUxmlObjectId(parent.id);
+                fieldAsset.id = GetNextUxmlAssetId(parent.id);
+                m_UxmlObjectIds.Add(fieldAsset.id);
             }
 
             return AddUxmlObject(fieldAsset, null, fullTypeName, xmlNamespace);
         }
 
-        int GetNextUxmlObjectId(int parentId)
+        [VisibleToOtherModules("UnityEditor.UIBuilderModule")]
+        internal int GetNextUxmlAssetId(int parentId)
         {
-            return (GetNextChildSerialNumber() + 585386304) * -1521134295 + parentId;
+            var guid = Guid.NewGuid().GetHashCode();
+            return (GetNextChildSerialNumber() + 585386304) * -1521134295 + parentId + guid;
         }
 
         [VisibleToOtherModules("UnityEditor.UIBuilderModule")]
@@ -432,6 +451,9 @@ namespace UnityEngine.UIElements
         [VisibleToOtherModules("UnityEditor.UIBuilderModule")]
         internal void CollectUxmlObjectAssets(UxmlAsset parent, string fieldName, List<UxmlObjectAsset> foundEntries)
         {
+            if (parent == null)
+                return;
+
             foreach (var e in m_UxmlObjectEntries)
             {
                 if (e.parentId == parent.id)
@@ -791,11 +813,11 @@ namespace UnityEngine.UIElements
             {
                 Assert.IsNotNull(rootElement);
 
-                var isNamedTemplate = false;
-                if (rootElement is TemplateAsset && rootElement.TryGetAttributeValue("name", out _))
+                var isTemplate = false;
+                if (rootElement is TemplateAsset)
                 {
                     cc.veaIdsPath.Add(rootElement.id);
-                    isNamedTemplate = true;
+                    isTemplate = true;
                 }
 
                 var newCc = new CreationContext(cc.slotInsertionPoints, cc.attributeOverrides, cc.serializedDataOverrides,
@@ -803,7 +825,7 @@ namespace UnityEngine.UIElements
                 var rootVe = CloneSetupRecursively(rootElement, idToChildren,
                     newCc);
 
-                if (isNamedTemplate)
+                if (isTemplate)
                 {
                     cc.veaIdsPath.Remove(rootElement.id);
                 }
@@ -874,17 +896,17 @@ namespace UnityEngine.UIElements
 
                 foreach (VisualElementAsset childVea in children)
                 {
-                    var isNamedTemplate = false;
-                    if (childVea is TemplateAsset && childVea.TryGetAttributeValue("name", out _))
+                    var isTemplate = false;
+                    if (childVea is TemplateAsset)
                     {
                         context.veaIdsPath.Add(childVea.id);
-                        isNamedTemplate = true;
+                        isTemplate = true;
                     }
 
                     // this will fill the slotInsertionPoints mapping
                     var childVe = CloneSetupRecursively(childVea, idToChildren, context);
 
-                    if (isNamedTemplate)
+                    if (isTemplate)
                     {
                         context.veaIdsPath.Remove(childVea.id);
                     }

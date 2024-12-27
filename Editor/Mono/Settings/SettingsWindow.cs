@@ -6,6 +6,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using UnityEditor.Experimental;
 using UnityEditor.IMGUI.Controls;
 using UnityEditor.UIElements;
@@ -29,7 +30,7 @@ namespace UnityEditor
 
         private SettingsProvider[] m_Providers;
         private SettingsTreeView m_TreeView;
-        private VisualSplitter m_Splitter;
+        private TwoPaneSplitView m_Splitter;
         private VisualElement m_SettingsPanel;
         private VisualElement m_TreeViewContainer;
         private VisualElement m_Toolbar;
@@ -37,6 +38,7 @@ namespace UnityEditor
 
         private bool m_SearchFieldGiveFocus;
         const string k_SearchField = "SearchField";
+        private const string k_MainSplitterViewDataKey =  "settings-main-splitter__view-data-key";
 
         private static class ImguiStyles
         {
@@ -45,7 +47,7 @@ namespace UnityEditor
             public const float searchFieldWidth = 300;
         }
 
-        private static class Styles
+        internal static class Styles
         {
             public static StyleBlock window => EditorResources.GetStyle("sb-settings-window");
             public static StyleBlock settingsPanel => EditorResources.GetStyle("sb-settings-panel-client-area");
@@ -56,13 +58,14 @@ namespace UnityEditor
             private static float s_HighlightColorAlpha = 0.67f;
 
             private static string s_SelectionColorTag = null;
-            public static string SelectionColorTag => s_SelectionColorTag ??
-                (s_SelectionColorTag = $"<mark=#{ColorUtility.ToHtmlStringRGBA(new Color(HighlightColor.r, HighlightColor.g, HighlightColor.b, s_HighlightColorAlpha))}>");
+            public static string SelectionColorTag => s_SelectionColorTag
+                ??= $"<mark=#{ColorUtility.ToHtmlStringRGBA(new Color(HighlightColor.r, HighlightColor.g, HighlightColor.b, s_HighlightColorAlpha))}>";
             public static readonly string SelectionColorEndTag = "</mark>";
             private static string s_TextColorTag = null;
-            public static string TextColorTag => s_TextColorTag ?? (s_TextColorTag = $"<color=#{ColorUtility.ToHtmlStringRGBA(Styles.settingsPanel.GetColor("-unity-search-highlight-color"))}>");
+            public static string TextColorTag => s_TextColorTag
+                ??= $"<color=#{ColorUtility.ToHtmlStringRGBA(settingsPanel.GetColor("-unity-search-highlight-color"))}>";
             public static readonly string TextColorEndTag = "</color>";
-            public static readonly System.Text.RegularExpressions.Regex TagRegex = new System.Text.RegularExpressions.Regex(@"<[^>]*>");
+            public static readonly Regex TagRegex = new(@"<[^>]*>", RegexOptions.Compiled);
 
             private static Color HighlightColor => Styles.settingsPanel.GetColor("-unity-search-highlight-selection-color");
         }
@@ -360,7 +363,11 @@ namespace UnityEditor
             root.Add(m_Toolbar);
 
             m_SplitterFlex = EditorPrefs.GetFloat(GetPrefKeyName(nameof(m_Splitter)), m_SplitterFlex);
-            m_Splitter = new VisualSplitter { splitSize = Styles.window.GetInt("-unity-splitter-size") };
+            m_Splitter = new TwoPaneSplitView
+            {
+                name = "SettingsSplitter",
+                viewDataKey = k_MainSplitterViewDataKey
+            };
             m_Splitter.AddToClassList("settings-splitter");
             root.Add(m_Splitter);
             m_TreeViewContainer = new IMGUIContainer(DrawTreeView)
@@ -510,8 +517,8 @@ namespace UnityEditor
             if (m_TreeView == null)
                 InitProviders();
 
-            var splitterRect = m_Splitter.GetSplitterRect(m_Splitter.Children().First());
-            var splitterPos = splitterRect.xMax - (m_Splitter.splitSize / 2f);
+            var splitterRect = m_Splitter.fixedPane.layout;
+            var splitterPos = splitterRect.xMax;
             var treeWidth = splitterPos;
             using (var scrollViewScope = new GUILayout.ScrollViewScope(m_PosLeft, GUILayout.Width(splitterPos), GUILayout.MaxWidth(splitterPos), GUILayout.MinWidth(splitterPos)))
             {
@@ -526,7 +533,7 @@ namespace UnityEditor
             UpdateSearchHighlight(m_SettingsPanel, m_SearchText);
         }
 
-        [MenuItem("Edit/Project Settings...", false, 259, false)]
+        [MenuItem("Edit/Project Settings...", false, 20000, false)]
         internal static void OpenProjectSettings()
         {
             SendTopMenuProjectSettingsEvent();

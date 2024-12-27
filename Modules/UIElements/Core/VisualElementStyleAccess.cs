@@ -10,13 +10,6 @@ using UnityEngine.UIElements.StyleSheets;
 
 namespace UnityEngine.UIElements
 {
-    /// <summary>
-    /// Base class for objects that are part of the UIElements visual tree.
-    /// </summary>
-    /// <remarks>
-    /// VisualElement contains several features that are common to all controls in UIElements, such as layout, styling and event handling.
-    /// Several other classes derive from it to implement custom rendering and define behaviour for controls.
-    /// </remarks>
     public partial class VisualElement
     {
         internal static CustomStyleAccess s_CustomStyleAccess = new CustomStyleAccess();
@@ -24,8 +17,30 @@ namespace UnityEngine.UIElements
         internal ResolvedStyleAccess resolvedStyleAccess;
 
         /// <summary>
-        /// Sets the <see cref="VisualElement"/> style values.
+        /// Sets the style values on a <see cref="VisualElement"/>.
         /// </summary>
+        /// <remarks>
+        /// The returned style data, computed from USS files or inline styles written to this object 
+        /// in C#, doesn't represent the fully resolved styles, such as the final height and width of 
+        /// a VisualElement. 
+        /// To access these fully resolved styles, use <see cref="resolvedStyle"/>.
+        /// </remarks>
+        /// <remarks>
+        /// For information about how to use this property and all the supported USS properties, refer to the
+        /// [[wiki:UIE-apply-styles-with-csharp|Apply styles in C# scripts]] and
+        /// [[wiki:UIE-USS-Properties-Reference|USS properties reference]] manual pages.
+        /// </remarks>
+        /// <example>
+        /// <code lang="cs">
+        /// <![CDATA[
+        /// // Set the background color of the element to red.
+        /// element.style.backgroundColor = Color.red;
+        /// ]]>
+        /// </code>
+        /// </example>
+        /// <remarks>
+        /// SA: [[VisualElement.resolvedStyle]], [[VisualElement.customStyle]], [[StyleSheet]]
+        /// </remarks>
         [CreateProperty]
         public IStyle style
         {
@@ -39,8 +54,42 @@ namespace UnityEngine.UIElements
         }
 
         /// <summary>
-        /// Returns the <see cref="VisualElement"/> resolved style values.
+        /// The final rendered style values of a visual element, as it's rendered in the current frame.(RO)
         /// </summary>
+        /// <remarks>
+        /// Use @@resolvedStyle@@ to find the actual rendered styling of a [[VisualElement]] in the
+        /// current frame, such as style values for width, height, and colors. You can get 
+        /// the resolved style value of an element to make layout decisions, troubleshoot styling issues, 
+        /// or ensure visual consistency across different platforms.
+        /// </remarks>
+        /// <remarks>
+        /// The final rendered style is computed from applied classes, inherited styles from ancestors, and 
+        /// inline styles defined in UXML or C# code. Therefore, the resolved style might be different from what 
+        /// you set through the [[VisualElement.style]] property, depending on the other styles applied to the element.
+        /// </remarks>
+        /// <remarks>
+        /// To get the resolved style when the geometry changes, register a callback to the [[GeometryChangedEvent]] event. 
+        /// If the element's geometry remains unchanged, consider adding a [[IVisualElementScheduler|scheduler]] to periodically check the element's 
+        /// resolved style. You can also poll the value during the [[MonoBehaviour.LateUpdate]] phase at runtime if you have access to MonoBehaviours.
+        /// </remarks>
+        /// <remarks>
+        /// For a list of all the style properties supported by UI Toolkit, refer to [[wiki:UIE-USS-Properties-Reference|USS properties reference]].
+        /// </remarks>
+        /// <remarks>
+        /// For more information about how to use this property and an example of how style changes when layout updates, 
+        /// refer to [[wiki:UIE-apply-styles-with-csharp|Apply styles in C# scripts]].
+        /// </remarks>
+        /// <example>
+        /// <code lang="cs">
+        /// <![CDATA[
+        /// // Get the resolved width of the element.
+        /// float width = element.resolvedStyle.width;
+        /// ]]>
+        /// </code>
+        /// </example>
+        /// <remarks>
+        /// SA: [[VisualElement.style]], [[VisualElement.customStyle]]
+        /// </remarks>
         [CreateProperty]
         public IResolvedStyle resolvedStyle
         {
@@ -54,8 +103,23 @@ namespace UnityEngine.UIElements
         }
 
         /// <summary>
-        /// Returns the custom style properties accessor for this element.
+        /// The custom style properties accessor of a <see cref="VisualElement"/> (RO).
         /// </summary>
+        /// <remarks>
+        /// To get the custom styles properties of an element, call the <see cref="ICustomStyle.TryGetValue"/> 
+        /// method to query the returned object of this property. 
+        /// </remarks>
+        /// <remarks>
+        /// For more information about how to use this property, refer to the
+        /// [[wiki:UIE-get-custom-styles|Get custom styles]] manual page.
+        /// </remarks>
+        /// <remarks>
+        /// For a list of all the supported style properties, refer 
+        /// to the [[wiki:UIE-USS-Properties-Reference|USS properties reference]] manual page.
+        /// </remarks>
+        /// <remarks>
+        /// SA: [[VisualElement.style]], [[VisualElement.resolvedStyle]]
+        /// </remarks>
         public ICustomStyle customStyle
         {
             get
@@ -311,7 +375,7 @@ namespace UnityEngine.UIElements
                         case StyleValueType.Enum:
                         {
                             var colorName = customProp.sheet.ReadAsString(handle);
-                            return StyleSheetColor.TryGetColor(colorName.ToLower(), out value);
+                            return StyleSheetColor.TryGetColor(colorName.ToLowerInvariant(), out value);
                         }
                         case StyleValueType.Color:
                         {

@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections;
+using System.Diagnostics;
 using Unity.Properties;
 
 namespace UnityEngine.UIElements
@@ -58,13 +59,16 @@ namespace UnityEngine.UIElements
     /// To enable horizontal scrolling when the displayed element is wider than the visible area, set the
     ///     <c>horizontal-scrolling-enabled</c> property in UXML or the <see cref="ListView.horizontalScrollingEnabled"/>
     ///     to <c>true</c>.
-    ///     
+    ///
     /// For more information, refer to [[wiki:UIE-uxml-element-ListView|ListView]].
     /// </remarks>
     /// <example>
     /// The following example creates an editor window with a list view of a thousand items.
     /// <code source="../../../../Modules/UIElements/Tests/UIElementsExamples/Assets/Examples/ListView_Example.cs"/>
     /// </example>
+    /// <remarks>
+    /// For the difference between IDs and indices, refer to <see cref="BaseVerticalCollectionView"/>.
+    /// </remarks>
     public class ListView : BaseListView
     {
         internal static readonly BindingId itemTemplateProperty = nameof(itemTemplate);
@@ -76,6 +80,15 @@ namespace UnityEngine.UIElements
         [UnityEngine.Internal.ExcludeFromDocs, Serializable]
         public new class UxmlSerializedData : BaseListView.UxmlSerializedData
         {
+            [Conditional("UNITY_EDITOR")]
+            public new static void Register()
+            {
+                UxmlDescriptionCache.RegisterType(typeof(UxmlSerializedData), new UxmlAttributeNames[]
+                {
+                    new ("itemTemplate", "item-template")
+                });
+            }
+
             #pragma warning disable 649
             [SerializeField] VisualTreeAsset itemTemplate;
             [SerializeField, UxmlIgnore, HideInInspector] UxmlAttributeFlags itemTemplate_UxmlAttributeFlags;

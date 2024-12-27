@@ -21,7 +21,7 @@ namespace UnityEditor.Build.Profile.Elements
             public BuildProfile data;
             public string text;
             public Texture2D icon;
-            public string platformId;
+            public GUID platformId;
         }
 
         internal enum ListItemType
@@ -111,7 +111,7 @@ namespace UnityEditor.Build.Profile.Elements
                 editableBuildProfileLabel.dataSource = profile;
                 UnityEngine.Assertions.Assert.IsNotNull(editableBuildProfileLabel, "Build profile label is null");
 
-                var icon = BuildProfileModuleUtil.GetPlatformIconSmall(profile.platformId);
+                var icon = BuildProfileModuleUtil.GetPlatformIconSmall(profile.platformGuid);
                 editableBuildProfileLabel.Set(profile.name, icon);
 
                 if (profile.IsActiveBuildProfileOrPlatform())
@@ -166,6 +166,14 @@ namespace UnityEditor.Build.Profile.Elements
             m_BuildProfilesListView.SetSelection(index);
         }
 
+        internal void SelectSharedSceneList()
+        {
+            if (m_PlatformListView.selectedIndex >= 0)
+                m_BuildProfilesListView.ClearSelection();
+
+            m_PlatformListView.SetSelection(0);
+        }
+
         internal void AppendBuildProfileSelection(int index) => m_BuildProfilesListView.AddToSelection(index);
 
         internal void ShowCustomBuildProfiles() => m_BuildProfilesListView.Show();
@@ -177,28 +185,61 @@ namespace UnityEditor.Build.Profile.Elements
         /// </summary>
         internal void SelectActiveProfile()
         {
-            var search = m_DataSource.customBuildProfiles;
-            for (int i = 0; i < search.Count; ++i)
-            {
-                if (search[i].IsActiveBuildProfileOrPlatform())
-                {
-                    SelectBuildProfile(i);
-                    return;
-                }
-            }
+            if (TrySelectCustomBuildProfile())
+                return;
 
-            search = m_DataSource.classicPlatforms;
+            if (TrySelectClassicPlatform())
+                return;
+
+            if (TrySelectClassicBasePlatform())
+                return;
+
+            Debug.LogWarning("[BuildProfile] Active profile not found in build profile window data source.");
+        }
+
+        bool TrySelectClassicPlatform()
+        {
+            var search = m_DataSource.classicPlatforms;
             for (int i = 0; i < search.Count; ++i)
             {
                 if (search[i].IsActiveBuildProfileOrPlatform())
                 {
                     // Consider scene list item occupies the first index.
                     SelectInstalledPlatform(i);
-                    return;
+                    return true;
                 }
             }
+            return false;
+        }
 
-            Debug.LogWarning("[BuildProfile] Active profile not found in build profile window data source.");
+        bool TrySelectClassicBasePlatform()
+        {
+            var search = m_DataSource.classicPlatforms;
+            for (int i = 0; i < search.Count; ++i)
+            {
+                if (BuildProfileModuleUtil.IsBasePlatformOfActivePlatform(search[i].platformGuid))
+                {
+                    // Consider scene list item occupies the first index.
+                    SelectInstalledPlatform(i);
+                    BuildProfileModuleUtil.SwitchLegacyActiveFromBuildProfile(search[i]);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        bool TrySelectCustomBuildProfile()
+        {
+            var search = m_DataSource.customBuildProfiles;
+            for (int i = 0; i < search.Count; ++i)
+            {
+                if (search[i].IsActiveBuildProfileOrPlatform())
+                {
+                    SelectBuildProfile(i);
+                    return true;
+                }
+            }
+            return false;
         }
 
         static List<ClassicItemData> GetPlatformListData(BuildProfileDataSource dataSource)
@@ -219,8 +260,8 @@ namespace UnityEditor.Build.Profile.Elements
                 {
                     type = ListItemType.InstalledPlatform,
                     data = profile,
-                    text = BuildProfileModuleUtil.GetClassicPlatformDisplayName(profile.platformId),
-                    icon = BuildProfileModuleUtil.GetPlatformIconSmall(profile.platformId)
+                    text = BuildProfileModuleUtil.GetClassicPlatformDisplayName(profile.platformGuid),
+                    icon = BuildProfileModuleUtil.GetPlatformIconSmall(profile.platformGuid)
                 });
             }
 

@@ -101,15 +101,10 @@ namespace Unity.UI.Builder
             if (string.IsNullOrEmpty(className))
                 return false;
 
-            if (className.Contains(" "))
+            var error = BuilderStyleSheetsUtilities.GetClassNameValidationError(className);
+            if (!string.IsNullOrEmpty(error))
             {
-                Builder.ShowWarning(BuilderConstants.AddStyleClassValidationSpaces);
-                return false;
-            }
-
-            if (!BuilderNameUtilities.attributeRegex.IsMatch(className))
-            {
-                Builder.ShowWarning(BuilderConstants.ClassNameValidationSpacialCharacters);
+                Builder.ShowWarning(error);
                 return false;
             }
 
@@ -413,7 +408,7 @@ namespace Unity.UI.Builder
                     StyleSheetToUss.ToUssString(rule.matchRecord.sheet, options, props[j], sb);
                     string s = sb.ToString();
 
-                    s = s?.ToLower();
+                    s = s?.ToLowerInvariant();
                     var textField = new TextField(props[j].name) { value = s };
                     textField.isReadOnly = true;
                     ruleFoldout.Add(textField);

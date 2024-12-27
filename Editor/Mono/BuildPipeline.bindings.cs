@@ -327,7 +327,7 @@ namespace UnityEditor
             if (buildProfile == null)
                 throw new ArgumentException("Build profile is invalid.");
 
-            BuildProfileContext.instance.activeProfile = buildProfile;
+            BuildProfileContext.activeProfile = buildProfile;
             var buildPlayerOptions = BuildProfileModuleUtil.GetBuildPlayerOptionsFromActiveProfile(
                 buildPlayerWithProfileOptions.locationPathName, buildPlayerWithProfileOptions.assetBundleManifestPath, buildPlayerWithProfileOptions.options);
             return BuildPlayer(buildPlayerOptions);
@@ -391,6 +391,24 @@ namespace UnityEditor
             {
                 for (int i = 0; i < scenes.Length; i++)
                     scenes[i] = scenes[i].Replace('\\', '/').Replace("//", "/");
+            }
+
+            if ((options & BuildOptions.Development) == 0)
+            {
+                if ((options & BuildOptions.AllowDebugging) != 0)
+                {
+                    throw new ArgumentException("Non-development build cannot allow debugging. Either add the Development build option, or remove the AllowDebugging build option.");
+                }
+
+                if ((options & BuildOptions.EnableDeepProfilingSupport) != 0)
+                {
+                    throw new ArgumentException("Non-development build cannot allow deep profiling support. Either add the Development build option, or remove the EnableDeepProfilingSupport build option.");
+                }
+
+                if ((options & BuildOptions.ConnectWithProfiler) != 0)
+                {
+                    throw new ArgumentException("Non-development build cannot allow auto-connecting the profiler. Either add the Development build option, or remove the ConnectWithProfiler build option.");
+                }
             }
 
             try

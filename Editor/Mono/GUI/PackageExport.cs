@@ -8,30 +8,35 @@ using System.IO;
 using System.Linq;
 using UnityEditor.IMGUI.Controls;
 using UnityEngine;
+using UnityEngine.Analytics;
 using UnityEngine.Scripting;
+using UnityEngine.UIElements;
 
 namespace UnityEditor
 {
     internal class PackageExport : EditorWindow
     {
-        [SerializeField] private ExportPackageItem[]    m_ExportPackageItems;
-        [SerializeField] private bool                   m_IncludeDependencies = true;
-        [SerializeField] private TreeViewState          m_TreeViewState;
-        [NonSerialized]  private PackageExportTreeView  m_Tree;
-        [NonSerialized]  private bool                   m_DidScheduleUpdate = false;
+        [SerializeField] private ExportPackageItem[] m_ExportPackageItems;
+        [SerializeField] private bool m_IncludeDependencies = true;
+        [SerializeField] private bool m_IncludeScripts = true;
+        [SerializeField] private TreeViewState m_TreeViewState;
+        [SerializeField] private string[] m_ProjectBrowserSelection;
+        [NonSerialized] private PackageExportTreeView m_Tree;
+        [NonSerialized] private bool m_DidScheduleUpdate = false;
 
         public ExportPackageItem[] items { get { return m_ExportPackageItems; } }
 
         internal static class Styles
         {
-            public static GUIStyle title                     = "LargeBoldLabel";
-            public static GUIStyle bottomBarBg               = "ProjectBrowserBottomBarBg";
-            public static GUIStyle topBarBg                  = "OT TopBar";
-            public static GUIStyle loadingTextStyle          = "CenteredLabel";
-            public static GUIContent allText                 = EditorGUIUtility.TrTextContent("All");
-            public static GUIContent noneText                = EditorGUIUtility.TrTextContent("None");
-            public static GUIContent includeDependenciesText = EditorGUIUtility.TrTextContent("Include dependencies");
-            public static GUIContent header                  = EditorGUIUtility.TrTextContent("Items to Export");
+            public static GUIStyle title = "LargeBoldLabel";
+            public static GUIStyle bottomBarBg = "ProjectBrowserBottomBarBg";
+            public static GUIStyle topBarBg = "OT TopBar";
+            public static GUIStyle loadingTextStyle = "CenteredLabel";
+            public static GUIContent allText = EditorGUIUtility.TrTextContent("All");
+            public static GUIContent noneText = EditorGUIUtility.TrTextContent("None");
+            public static GUIContent includeDependenciesText = EditorGUIUtility.TrTextContent("Include dependencies", "Include all dependencies required for the selected items in the export list.");
+            public static GUIContent includeScriptsText = EditorGUIUtility.TrTextContent("Include all scripts", "Include all project scripts in the export list to avoid potential compilation errors.");
+            public static GUIContent header = EditorGUIUtility.TrTextContent("Items to Export");
         }
 
         public PackageExport()
@@ -41,14 +46,14 @@ namespace UnityEditor
             minSize = new Vector2(350, 350);
         }
 
-        // Called from from menu
+        // Called from menu
         [RequiredByNativeCode]
         static internal void ShowExportPackage()
         {
             GetWindow<PackageExport>(true, "Exporting package").RefreshAssetList();
         }
 
-        internal static IEnumerable<ExportPackageItem> GetAssetItemsForExport(ICollection<string> guids, bool includeDependencies)
+        internal static IEnumerable<ExportPackageItem> GetAssetItemsForExport(ICollection<string> guids, bool includeDependencies, bool includeScripts)
         {
             // if nothing is selected, export all
             if (0 == guids.Count)
@@ -59,8 +64,7 @@ namespace UnityEditor
 
             ExportPackageItem[] assets = PackageUtility.BuildExportPackageItemsListWithPackageManagerWarning(guids.ToArray(), includeDependencies, true);
 
-            // If any scripts are included, add all scripts with dependencies
-            if (includeDependencies && assets.Any(asset => UnityEditorInternal.InternalEditorUtility.IsScriptOrAssembly(asset.assetPath)))
+            if (includeScripts)
             {
                 assets = PackageUtility.BuildExportPackageItemsListWithPackageManagerWarning(
                     guids.Union(UnityEditorInternal.InternalEditorUtility.GetAllScriptGUIDs()).ToArray(), includeDependencies, true);
@@ -157,15 +161,21 @@ namespace UnityEditor
             GUILayout.BeginHorizontal();
             GUILayout.Space(10);
 
+            GUI.enabled = m_Tree != null ? !m_Tree.isAllItemsEnabled : true;
             if (GUILayout.Button(Styles.allText, GUILayout.Width(50)))
             {
                 m_Tree.SetAllEnabled(PackageExportTreeView.EnabledState.All);
+                SendAnalyticsEvent("selectAll");
             }
+            GUI.enabled = true;
 
+            GUI.enabled = m_Tree != null ? m_Tree.isAnyItemEnabled : true;
             if (GUILayout.Button(Styles.noneText, GUILayout.Width(50)))
             {
                 m_Tree.SetAllEnabled(PackageExportTreeView.EnabledState.None);
+                SendAnalyticsEvent("selectNone");
             }
+            GUI.enabled = true;
 
             GUILayout.Space(10);
             GUILayout.EndHorizontal();
@@ -182,7 +192,21 @@ namespace UnityEditor
             GUILayout.Space(10);
 
             EditorGUI.BeginChangeCheck();
-            m_IncludeDependencies = GUILayout.Toggle(m_IncludeDependencies, Styles.includeDependenciesText);
+            var includeDependenciesNewValue = GUILayout.Toggle(m_IncludeDependencies, Styles.includeDependenciesText);
+            if (m_IncludeDependencies != includeDependenciesNewValue)
+            {
+                m_IncludeDependencies = includeDependenciesNewValue;
+                SendAnalyticsEvent("toggleIncludeDependencies");
+            }
+
+            GUILayout.Space(5);
+            var includeScriptsNewValue = GUILayout.Toggle(m_IncludeScripts, Styles.includeScriptsText);
+            if (m_IncludeScripts != includeScriptsNewValue)
+            {
+                m_IncludeScripts = includeScriptsNewValue;
+                SendAnalyticsEvent("toggleIncludeScripts");
+            }
+
             if (EditorGUI.EndChangeCheck())
             {
                 RefreshAssetList();
@@ -190,6 +214,7 @@ namespace UnityEditor
 
             GUILayout.FlexibleSpace();
 
+            GUI.enabled = m_Tree?.isAnyItemEnabled == true;
             if (GUILayout.Button(EditorGUIUtility.TrTextContent("Export...")))
             {
                 string invalidChars = EditorUtility.GetInvalidFilenameChars();
@@ -197,12 +222,14 @@ namespace UnityEditor
                 if (selectedItemWithInvalidChar != null && !EditorUtility.DisplayDialog(L10n.Tr("Cross platform incompatibility"), L10n.Tr($"The asset “{Path.GetFileNameWithoutExtension(selectedItemWithInvalidChar.assetPath)}” contains one or more characters that are not compatible across platforms: {invalidChars}"), L10n.Tr("I understand"), L10n.Tr("Cancel")))
                 {
                     GUIUtility.ExitGUI();
+                    SendAnalyticsEvent("exportErrorInvalidCharInAssetName");
                     return;
                 }
 
                 Export();
                 GUIUtility.ExitGUI();
             }
+            GUI.enabled = true;
 
             GUILayout.Space(10);
             GUILayout.EndHorizontal();
@@ -247,9 +274,14 @@ namespace UnityEditor
                 }
 
                 PackageUtility.ExportPackage(guids.ToArray(), fileName);
+                SendAnalyticsEvent("exportSuccess");
 
                 Close();
                 GUIUtility.ExitGUI();
+            }
+            else
+            {
+                SendAnalyticsEvent("exportCancelledAtFileSelection");
             }
         }
 
@@ -275,13 +307,69 @@ namespace UnityEditor
         {
             UnscheduleBuildAssetList();
 
-            m_ExportPackageItems = GetAssetItemsForExport(Selection.assetGUIDsDeepSelection, m_IncludeDependencies).ToArray();
+            m_ProjectBrowserSelection ??= Selection.assetGUIDsDeepSelection;
+            m_ExportPackageItems = GetAssetItemsForExport(m_ProjectBrowserSelection, m_IncludeDependencies, m_IncludeScripts).ToArray();
 
             // GUI is reconstructed in OnGUI (when needed)
             m_Tree = null;
             m_TreeViewState = null;
 
             Repaint();
+        }
+
+        private void SendAnalyticsEvent(string action)
+        {
+            var numSelectedAssets = 0;
+            var numTotalAssets = 0;
+            foreach (var i in m_ExportPackageItems)
+            {
+                if (i.isFolder)
+                    continue;
+                numTotalAssets++;
+                if (i.enabledStatus > 0)
+                    numSelectedAssets++;
+            }
+            AssetExportWindowAnalytics.SendEvent(action, numSelectedAssets, numTotalAssets, m_IncludeDependencies);
+        }
+
+        [AnalyticInfo(eventName: k_EventName, vendorKey: k_VendorKey)]
+        internal class AssetExportWindowAnalytics : IAnalytic
+        {
+            private const string k_EventName = "assetExportWindow";
+            private const string k_VendorKey = "unity.package-manager-ui";
+
+            [Serializable]
+            private class Data : IAnalytic.IData
+            {
+                public string action;
+                public int num_selected_assets;
+                public int num_total_assets;
+                public bool include_dependencies;
+            }
+
+            private Data m_Data;
+            private AssetExportWindowAnalytics(string action, int numSelectedAsset, int numTotalAssets, bool includeDependencies)
+            {
+                m_Data = new Data
+                {
+                    action = action,
+                    num_selected_assets = numSelectedAsset,
+                    num_total_assets = numTotalAssets,
+                    include_dependencies = includeDependencies,
+                };
+            }
+
+            public bool TryGatherData(out IAnalytic.IData data, out Exception error)
+            {
+                error = null;
+                data = m_Data;
+                return data != null;
+            }
+
+            public static void SendEvent(string action, int numSelectedAsset, int numTotalAssets, bool includeDependencies)
+            {
+                EditorAnalytics.SendAnalytic(new AssetExportWindowAnalytics(action, numSelectedAsset, numTotalAssets, includeDependencies));
+            }
         }
     }
 }

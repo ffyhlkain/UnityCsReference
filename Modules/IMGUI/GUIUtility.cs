@@ -61,7 +61,7 @@ namespace UnityEngine
         // This callback function allows to peek at events before they
         // are processed in order to clean any dangling state left after
         // an event was unexpectedly used.
-        internal static Action<EventType, KeyCode> beforeEventProcessed;
+        internal static Action<EventType, KeyCode, EventModifiers> beforeEventProcessed;
 
         private static Event m_Event = new Event();
 
@@ -176,7 +176,7 @@ namespace UnityEngine
             if (beforeEventProcessed != null)
             {
                 m_Event.CopyFromPtr(nativeEventPtr);
-                beforeEventProcessed.Invoke(m_Event.type, m_Event.keyCode);
+                beforeEventProcessed.Invoke(m_Event.type, m_Event.keyCode, m_Event.modifiers);
             }
 
             result = false;
@@ -218,6 +218,12 @@ namespace UnityEngine
             {
                 GUILayoutUtility.Begin(instanceID);
             }
+        }
+
+        [RequiredByNativeCode]
+        internal static void DestroyGUI(int instanceID)
+        {
+            GUILayoutUtility.RemoveSelectedIdList(instanceID, false);
         }
 
         [RequiredByNativeCode]

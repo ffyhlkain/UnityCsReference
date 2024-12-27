@@ -4,6 +4,7 @@
 
 namespace UnityEditor.PackageManager.UI.Internal
 {
+    // If a new state is added to this list, make sure to sync up the PackageItem.k_TooltipsByProgress array
     internal enum PackageState
     {
         None = 0,

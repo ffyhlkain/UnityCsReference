@@ -523,18 +523,23 @@ namespace UnityEngine.TextCore.Text
             }
 
             // Set texture upload mode to batching texture.Apply()
+            // This will be set back to true in TryAddGlyphToTexture
+            // It makes no sense to force to apply the texture per glyph
+            // TODO: during the refactor, make it always false and remove the api
+            // once we are certain all code path call RegisterAtlasTextureForApply
             FontEngine.SetTextureUploadMode(false);
 
             if (TryAddGlyphToTexture(glyphIndex, out glyph, populateLigatures))
                 return true;
 
             // Add glyph which did not fit in current atlas texture to new atlas texture.
-            if (m_IsMultiAtlasTexturesEnabled)
+            if (m_IsMultiAtlasTexturesEnabled && m_UsedGlyphRects.Count > 0)
             {
                 // Create new atlas texture
                 SetupNewAtlasTexture();
 
-                if(TryAddGlyphToTexture(glyphIndex, out glyph, populateLigatures))
+                FontEngine.SetTextureUploadMode(false);
+                if (TryAddGlyphToTexture(glyphIndex, out glyph, populateLigatures))
                     return true;
             }
 
@@ -647,6 +652,7 @@ namespace UnityEngine.TextCore.Text
             // Initialize new atlas texture
             TextureFormat texFormat = ((GlyphRasterModes)m_AtlasRenderMode & GlyphRasterModes.RASTER_MODE_COLOR) == GlyphRasterModes.RASTER_MODE_COLOR ? TextureFormat.RGBA32 : TextureFormat.Alpha8;
             m_AtlasTextures[m_AtlasTextureIndex] = new Texture2D(m_AtlasWidth, m_AtlasHeight, texFormat, false);
+            m_AtlasTextures[m_AtlasTextureIndex].hideFlags = m_AtlasTextures[0].hideFlags;
             FontEngine.ResetAtlasTexture(m_AtlasTextures[m_AtlasTextureIndex]);
 
             // Clear packing GlyphRects

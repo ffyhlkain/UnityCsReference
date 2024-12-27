@@ -169,6 +169,18 @@ namespace UnityEditor
             return m_LastSelectedInstanceId;
         }
 
+        void SetSelectedInstanceID(int instanceID)
+        {
+            m_LastSelectedInstanceId = instanceID;
+            if (m_ListArea == null)
+                return;
+
+            if (instanceID != 0)
+                m_ListArea.m_SelectedObjectIcon = AssetDatabase.GetCachedIcon(AssetDatabase.GetAssetPath(instanceID));
+            else
+                m_ListArea.m_SelectedObjectIcon = null;
+        }
+
         [UsedImplicitly]
         void OnEnable()
         {
@@ -229,7 +241,8 @@ namespace UnityEditor
 
         void ListAreaItemSelectedCallback(bool doubleClicked)
         {
-            m_LastSelectedInstanceId = GetInternalSelectedInstanceID();
+            SetSelectedInstanceID(GetInternalSelectedInstanceID());
+
             if (doubleClicked)
             {
                 ItemWasDoubleClicked();
@@ -453,7 +466,7 @@ namespace UnityEditor
             m_SkipHiddenPackages = true;
             m_AllowedIDs = allowedInstanceIDs;
             m_ObjectBeingEdited = objectBeingEdited;
-            m_LastSelectedInstanceId = obj?.GetInstanceID() ?? 0;
+            SetSelectedInstanceID(obj?.GetInstanceID() ?? 0);
             m_SelectionCancelled = false;
             m_ShowNoneItem = showNoneItem;
 
@@ -520,7 +533,7 @@ namespace UnityEditor
 
                 Action<UnityObject> onSelectionChanged = selectedObj =>
                 {
-                    m_LastSelectedInstanceId = selectedObj == null ? 0 : selectedObj.GetInstanceID();
+                    SetSelectedInstanceID(selectedObj == null ? 0 : selectedObj.GetInstanceID());
                     NotifySelectionChanged(false);
                 };
                 Action<UnityObject, bool> onSelectorClosed = (selectedObj, canceled) =>
@@ -530,12 +543,12 @@ namespace UnityEditor
                     {
                         // Undo changes we have done in the ObjectSelector
                         Undo.RevertAllDownToGroup(m_ModalUndoGroup);
-                        m_LastSelectedInstanceId = 0;
+                        SetSelectedInstanceID(0);
                         m_SelectionCancelled = true;
                     }
                     else
                     {
-                        m_LastSelectedInstanceId = selectedObj == null ? 0 : selectedObj.GetInstanceID();
+                        SetSelectedInstanceID(selectedObj == null ? 0 : selectedObj.GetInstanceID());
                         NotifySelectionChanged(false);
                     }
 
@@ -656,7 +669,7 @@ namespace UnityEditor
 
         void TreeViewSelection(TreeViewItem item)
         {
-            m_LastSelectedInstanceId = GetInternalSelectedInstanceID();
+            SetSelectedInstanceID(GetInternalSelectedInstanceID());
             NotifySelectionChanged(true);
         }
 
@@ -679,6 +692,8 @@ namespace UnityEditor
                 m_ListArea.repaintCallback += Repaint;
                 m_ListArea.itemSelectedCallback += ListAreaItemSelectedCallback;
                 m_ListArea.gridSize = m_StartGridSize.value;
+
+                SetSelectedInstanceID(m_LastSelectedInstanceId);
 
                 FilterSettingsChanged();
             }
@@ -941,7 +956,7 @@ namespace UnityEditor
                 size = icon.width * 2;
 
             FilterMode temp = icon.filterMode;
-            icon.filterMode = FilterMode.Point;
+            icon.filterMode = FilterMode.Bilinear;
             GUI.DrawTexture(new Rect(position.x + ((int)position.width - size) / 2, position.y + ((int)position.height - size) / 2, size, size), icon, ScaleMode.ScaleToFit);
             icon.filterMode = temp;
         }
@@ -1020,7 +1035,7 @@ namespace UnityEditor
             // Clear selection so that object field doesn't grab it
             m_ListArea?.InitSelection(new int[0]);
             m_ObjectTreeWithSearch.Clear();
-            m_LastSelectedInstanceId = 0;
+            SetSelectedInstanceID(0);
             m_SelectionCancelled = true;
             m_EditedProperty = null;
 

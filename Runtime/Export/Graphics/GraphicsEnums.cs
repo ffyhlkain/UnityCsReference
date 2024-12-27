@@ -3,6 +3,7 @@
 // https://unity3d.com/legal/licenses/Unity_Reference_Only_License
 
 using System;
+using System.ComponentModel;
 using UnityEngine.Bindings;
 using UnityEngine.Scripting;
 using UnityEngine.Scripting.APIUpdating;
@@ -383,10 +384,19 @@ namespace UnityEngine
         DXT1Crunched = 28,
         DXT5Crunched = 29,
 
+        [System.Obsolete("Texture compression format PVRTC has been deprecated and will be removed in a future release")]
+        [EditorBrowsable(EditorBrowsableState.Never)]
         PVRTC_RGB2  = 30,
+        [System.Obsolete("Texture compression format PVRTC has been deprecated and will be removed in a future release")]
+        [EditorBrowsable(EditorBrowsableState.Never)]
         PVRTC_RGBA2 = 31,
+        [System.Obsolete("Texture compression format PVRTC has been deprecated and will be removed in a future release")]
+        [EditorBrowsable(EditorBrowsableState.Never)]
         PVRTC_RGB4  = 32,
+        [System.Obsolete("Texture compression format PVRTC has been deprecated and will be removed in a future release")]
+        [EditorBrowsable(EditorBrowsableState.Never)]
         PVRTC_RGBA4 = 33,
+
         ETC_RGB4    = 34,
 
         EAC_R = 41,
@@ -550,7 +560,8 @@ namespace UnityEngine
         NoResolvedColorSurface = 1 << 8,
         DynamicallyScalable = 1 << 10,
         BindMS = 1 << 11,
-        DynamicallyScalableExplicit = 1 << 16,
+        ShadingRate = 1 << 14,
+        DynamicallyScalableExplicit = 1 << 17,
     }
 
     public enum RenderTextureReadWrite
@@ -810,13 +821,29 @@ namespace UnityEngine
                 RGBA_BC7_SRGB = 108,
                 RGBA_BC7_UNorm = 109,
 
+                [System.Obsolete("Texture compression format PVRTC has been deprecated and will be removed in a future release")]
+                [EditorBrowsable(EditorBrowsableState.Never)]
                 RGB_PVRTC_2Bpp_SRGB = 110,
+                [System.Obsolete("Texture compression format PVRTC has been deprecated and will be removed in a future release")]
+                [EditorBrowsable(EditorBrowsableState.Never)]
                 RGB_PVRTC_2Bpp_UNorm = 111,
+                [System.Obsolete("Texture compression format PVRTC has been deprecated and will be removed in a future release")]
+                [EditorBrowsable(EditorBrowsableState.Never)]
                 RGB_PVRTC_4Bpp_SRGB = 112,
+                [System.Obsolete("Texture compression format PVRTC has been deprecated and will be removed in a future release")]
+                [EditorBrowsable(EditorBrowsableState.Never)]
                 RGB_PVRTC_4Bpp_UNorm = 113,
+                [System.Obsolete("Texture compression format PVRTC has been deprecated and will be removed in a future release")]
+                [EditorBrowsable(EditorBrowsableState.Never)]
                 RGBA_PVRTC_2Bpp_SRGB = 114,
+                [System.Obsolete("Texture compression format PVRTC has been deprecated and will be removed in a future release")]
+                [EditorBrowsable(EditorBrowsableState.Never)]
                 RGBA_PVRTC_2Bpp_UNorm = 115,
+                [System.Obsolete("Texture compression format PVRTC has been deprecated and will be removed in a future release")]
+                [EditorBrowsable(EditorBrowsableState.Never)]
                 RGBA_PVRTC_4Bpp_SRGB = 116,
+                [System.Obsolete("Texture compression format PVRTC has been deprecated and will be removed in a future release")]
+                [EditorBrowsable(EditorBrowsableState.Never)]
                 RGBA_PVRTC_4Bpp_UNorm = 117,
 
                 RGB_ETC_UNorm = 118,
@@ -870,6 +897,7 @@ namespace UnityEngine
                 Static = 1,
                 DynamicTransform = 2,
                 DynamicGeometry = 3,
+                DynamicGeometryManualUpdate = 4,
             }
         }//namespace Rendering
     }//namespace Experimental
@@ -1444,7 +1472,8 @@ namespace UnityEngine.Rendering
         GameCoreXboxSeries = 25, // GameCoreXboxSeries intentionally _NOT_ set to the same as GameCoreScarlett
         PlayStation5 = 26,
         PlayStation5NGGC = 27,
-        WebGPU = 28
+        WebGPU = 28,
+        ReservedCFE = 29,
     }
 
     public enum GraphicsTier
@@ -1560,6 +1589,7 @@ namespace UnityEngine.Rendering
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
     public struct RenderTargetIdentifier : IEquatable<RenderTargetIdentifier>
     {
+        public static readonly RenderTargetIdentifier Invalid = new RenderTargetIdentifier();
         public const int AllDepthSlices = -1;
 
         // constructors
@@ -1973,13 +2003,17 @@ namespace UnityEngine.Rendering
         UNITY_PLATFORM_SUPPORTS_WAVE_64,
 
         UNITY_NEEDS_RENDERPASS_FBFETCH_FALLBACK,
+        UNITY_PLATFORM_SUPPORTS_DEPTH_FETCH,
     }
 
     // Match VideoShadersMode on C++ side
     public enum VideoShadersIncludeMode
     {
+        [InspectorName("Don't include")]
         Never = 0,
+        [InspectorName("Include if referenced")]
         Referenced = 1,
+        [InspectorName("Always include")]
         Always = 2
     }
 
@@ -2090,7 +2124,8 @@ namespace UnityEngine.Rendering
         Color = 0,
         Depth = 1,
         Stencil = 2,
-        Default = 3
+        Default = 3,
+        ShadingRate = 4,
     }
 
     // Tries to follow naming from https://unity3d.com/learn/tutorials/topics/best-practices/multithreaded-rendering-graphics-jobs
@@ -2132,6 +2167,51 @@ namespace UnityEngine.Rendering
 
         // control invalidation of state tracking done by the backend
         CustomMarkerCallbackForceInvalidateStateTracking = 1 << 2
+    }
+
+    // Needs to be kept in sync with Runtime\GfxDevice\GfxDeviceTypes.h
+    public enum ShadingRateFragmentSize
+    {
+        [InspectorName("FragmentSize 1x1")]
+        FragmentSize1x1,
+
+        [InspectorName("FragmentSize 1x2")]
+        FragmentSize1x2,
+
+        [InspectorName("FragmentSize 2x1")]
+        FragmentSize2x1,
+
+        [InspectorName("FragmentSize 2x2")]
+        FragmentSize2x2,
+
+        [InspectorName("FragmentSize 1x4")]
+        FragmentSize1x4,
+
+        [InspectorName("FragmentSize 4x1")]
+        FragmentSize4x1,
+
+        [InspectorName("FragmentSize 2x4")]
+        FragmentSize2x4,
+
+        [InspectorName("FragmentSize 4x2")]
+        FragmentSize4x2,
+
+        [InspectorName("FragmentSize 4x4")]
+        FragmentSize4x4,
+    };
+
+    public enum ShadingRateCombinerStage
+    {
+        Primitive,
+        Fragment,
+    }
+
+    public enum ShadingRateCombiner
+    {
+        Keep,
+        Override,
+        Min,
+        Max,
     }
 } // namespace UnityEngine.Rendering
 

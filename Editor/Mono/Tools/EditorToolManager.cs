@@ -28,8 +28,6 @@ namespace UnityEditor.EditorTools
         [SerializeField]
         Tool m_LastBuiltinTool = Tool.Move;
 
-        Type m_LastCustomContext;
-
         [SerializeField]
         EditorTool m_LastCustomTool;
 
@@ -100,9 +98,6 @@ namespace UnityEditor.EditorTools
                 if (prev != null)
                 {
                     prev.Deactivate();
-
-                    if (!(prev is GameObjectToolContext))
-                        instance.m_LastCustomContext = prev.GetType();
                 }
 
                 ToolManager.ActiveContextWillChange();
@@ -449,7 +444,16 @@ namespace UnityEditor.EditorTools
             instance.CleanupSingletons();
             if (type == null)
                 return null;
-            var res = instance.m_SingletonObjects.FirstOrDefault(x => x.GetType() == type);
+            var res = default(ScriptableObject);
+            for (int i = 0; i < instance.m_SingletonObjects.Count; ++i)
+            {
+                if (instance.m_SingletonObjects[i].GetType() == type)
+                {
+                    res = instance.m_SingletonObjects[i];
+                    break;
+                }
+            }
+
             if (res != null)
                 return res;
             res = CreateInstance(type);
@@ -494,8 +498,6 @@ namespace UnityEditor.EditorTools
         internal static Tool previousTool => instance.m_PreviousTool;
 
         internal static EditorTool lastCustomTool => instance.m_LastCustomTool;
-
-        internal static Type lastCustomContext => instance.m_LastCustomContext;
 
         public static void RestorePreviousPersistentTool()
         {
@@ -671,7 +673,7 @@ namespace UnityEditor.EditorTools
                 if (!searchLockedInspectors && customEditorTool.lockedInspector)
                     continue;
 
-                if (predicate(customEditorTool) && customEditorTool.editor is EditorTool tool && tool.IsAvailable())
+                if (predicate(customEditorTool) && customEditorTool.editor is EditorTool tool)
                     return tool;
             }
 

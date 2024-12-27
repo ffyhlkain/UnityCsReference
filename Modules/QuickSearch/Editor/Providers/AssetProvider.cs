@@ -67,7 +67,7 @@ namespace UnityEditor.Search.Providers
                 {
                     if (!m_HasType)
                     {
-                        if (source.EndsWith("prefab", StringComparison.OrdinalIgnoreCase))
+                        if (source.EndsWith(".prefab", StringComparison.OrdinalIgnoreCase))
                             m_Type = AssetDatabase.GetTypeFromPathAndFileID(source, (long)gid.targetObjectId);
                         else if (flags.HasAll(SearchDocumentFlags.Nested | SearchDocumentFlags.Asset))
                         {
@@ -233,6 +233,18 @@ namespace UnityEditor.Search.Providers
                     return null;
             }
 
+            if (obj && AssetDatabase.IsSubAsset(obj))
+            {
+                var p = Utils.GetAssetPreviewFromPath(context, obj, info.source, size, options);
+                if (p) return p;
+
+                if (info.type != null)
+                {
+                    p = SearchUtils.GetTypeIcon(info.type);
+                    if (p) return p;
+                }
+            }
+
             return Utils.GetAssetPreviewFromPath(context, info.source, size, options);
         }
 
@@ -276,7 +288,12 @@ namespace UnityEditor.Search.Providers
 
             if (info.flags.HasAny(SearchDocumentFlags.Object))
                 return TrimLabel((item.label = info.path), displayCompact);
-            return (item.label = Path.GetFileName(info.path));
+            item.label = Path.GetFileName(info.path);
+            if (string.IsNullOrEmpty(item.label) && info.obj != null)
+            {
+                item.label = info.obj.name;
+            }
+            return item.label;
         }
 
         private static string FetchDescription(SearchItem item)
@@ -500,7 +517,7 @@ namespace UnityEditor.Search.Providers
                 if (GlobalObjectId.TryParse(searchQuery, out var gid))
                 {
                     var obj = GlobalObjectId.GlobalObjectIdentifierToObjectSlow(gid);
-                    var objPath = SearchUtils.GetObjectPath(obj);
+                    var objPath = SearchUtils.GetObjectPath(obj, false);
                     var info = new AssetMetaInfo(objPath, gid,
                         gid.identifierType == (int)IdentifierType.kImportedAsset ? SearchDocumentFlags.Asset : SearchDocumentFlags.Nested | SearchDocumentFlags.Object);
                     yield return provider.CreateItem(context, gid.ToString(), -1, objPath, null, null, info);
@@ -906,7 +923,7 @@ namespace UnityEditor.Search.Providers
         [Shortcut("Help/Search/Assets")]
         internal static void PopQuickSearch()
         {
-            SearchUtils.OpenWithProviders(type, FindProvider.providerId);
+            SearchUtils.OpenWithContextualProviders(type, FindProvider.providerId);
         }
 
         [SearchTemplate(description = "Find all textures", providerId = type)] internal static string ST1() => @"t:texture";

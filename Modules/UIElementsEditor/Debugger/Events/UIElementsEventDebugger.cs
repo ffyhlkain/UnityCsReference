@@ -1114,8 +1114,6 @@ namespace UnityEditor.UIElements.Experimental.Debugger
                         handler.text += " Immediately Stopped Propagation";
                     else if (callback.propagationHasStopped)
                         handler.text += " Stopped Propagation";
-                    if (callback.defaultHasBeenPrevented)
-                        handler.text += " (Default Prevented)";
 
                     phase.text = callback.eventBase.propagationPhase.ToString();
                     duration.text = callback.duration / 1000f + "ms";
@@ -1391,10 +1389,10 @@ namespace UnityEditor.UIElements.Experimental.Debugger
         void UpdatePlaybackButtons()
         {
             var isProSkin = EditorGUIUtility.isProSkin;
-            m_DecreasePlaybackSpeedButton.EnableInClassList("light", !isProSkin);
-            m_IncreasePlaybackSpeedButton.EnableInClassList("light", !isProSkin);
-            m_SaveReplayButton.EnableInClassList("light", !isProSkin);
-            m_LoadReplayButton.EnableInClassList("light", !isProSkin);
+            m_DecreasePlaybackSpeedButton?.EnableInClassList("light", !isProSkin);
+            m_IncreasePlaybackSpeedButton?.EnableInClassList("light", !isProSkin);
+            m_SaveReplayButton?.EnableInClassList("light", !isProSkin);
+            m_LoadReplayButton?.EnableInClassList("light", !isProSkin);
 
             var anySelected = m_SelectedEvents != null && m_SelectedEvents.Any();
             m_TogglePlayback?.SetEnabled(m_Debugger.isReplaying);

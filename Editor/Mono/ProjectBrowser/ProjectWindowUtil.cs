@@ -69,7 +69,7 @@ namespace UnityEditor
                     cleanPath);
                 var obj = AssetDatabase.LoadMainAssetAtPath(cleanPath);
                 var name = obj.name;
-                ObjectFactory.SmartResetObjectToDefault(obj);
+                ObjectFactory.FinalizeObjectAndAwake(obj);
                 obj.name = name;
                 AssetDatabase.SaveAssetIfDirty(obj);
                 ProjectWindowUtil.FrameObjectInProjectWindow(instanceId);
@@ -442,6 +442,11 @@ namespace UnityEditor
                 CreatePrefabVariants(gameObjects);
             }
         }
+
+        [MenuItem("Assets/Create/Prefab Variant", true)]
+        static bool CreatePrefabVariantShortcutValidation() => CreatePrefabVariantValidation();
+        [MenuItem("Assets/Create/Prefab Variant", false, -215)]
+        static void CreatePrefabVariantShortcut() => CreatePrefabVariant();
 
         static GameObject[] CreatePrefabVariants(GameObject[] gameObjects)
         {
@@ -862,13 +867,13 @@ namespace UnityEditor
             if (instanceID == ProjectBrowser.kPackagesFolderInstanceId)
                 return;
 
-            // Ensure we add the main asset as ancestor if input is a subasset
+            // Ensure we add the main asset as ancestor if input is a sub-asset
             int mainAssetInstanceID = AssetDatabase.GetMainAssetOrInProgressProxyInstanceID(AssetDatabase.GetAssetPath(instanceID));
             bool isSubAsset = mainAssetInstanceID != instanceID;
             if (isSubAsset)
                 ancestors.Add(mainAssetInstanceID);
 
-            // Find ancestors of main aset
+            // Find ancestors of main asset
             string currentFolderPath = GetContainingFolder(AssetDatabase.GetAssetPath(mainAssetInstanceID));
             while (!string.IsNullOrEmpty(currentFolderPath))
             {
@@ -1046,7 +1051,7 @@ namespace UnityEditor
             bool foundAssetsFolder = instanceIDs.IndexOf(AssetDatabase.GetMainAssetOrInProgressProxyInstanceID("Assets")) >= 0;
             if (foundAssetsFolder)
             {
-                EditorUtility.DisplayDialog(L10n.Tr("Cannot Delete"), L10n.Tr("Deleting the 'Assets' folder is not allowed"), L10n.Tr("Ok"));
+                EditorUtility.DisplayDialog(L10n.Tr("Cannot Delete"), L10n.Tr("Deleting the 'Assets' folder is not allowed"), L10n.Tr("OK"));
                 return false;
             }
 
@@ -1097,11 +1102,13 @@ namespace UnityEditor
                 {
                     infotext.AppendLine();
                     string name = (paths.Length == 1) ? "This Material" : "One or more of these Material(s)";
-                    infotext.AppendLine(name + " has one or more children. Would you like to reparent all of these children to their closest remaining ancestor?");
-                    int dialogOptionIndex = EditorUtility.DisplayDialogComplex(title, infotext.ToString(), L10n.Tr("Delete and reparent children"), L10n.Tr("Delete only"), L10n.Tr("Cancel"));
-                    if (dialogOptionIndex == 0)
+                    infotext.AppendLine(name + " is inherited by one or more children. Deleting will result in the children re-mapping to their closest remaining ancestor. Would you like to proceed with re-parenting?");
+
+                    bool dialogOptionIndex = EditorUtility.DisplayDialog(title, infotext.ToString(), L10n.Tr("Delete and re-parent children"), L10n.Tr("Cancel"));
+
+                    if (dialogOptionIndex)
                         reparentMaterials = true;
-                    else if (dialogOptionIndex == 2)
+                    else
                         return false;
                 }
                 else if (!EditorUtility.DisplayDialog(title, infotext.ToString(), L10n.Tr("Delete"), L10n.Tr("Cancel")))
@@ -1142,7 +1149,7 @@ namespace UnityEditor
                     L10n.Tr("Some assets could not be deleted.\nMake sure you are connected to your Version Control server or \"Work Offline\" is enabled.") :
                     L10n.Tr("Some assets could not be deleted.\nMake sure nothing is keeping a hook on them, like a loaded DLL for example.");
 
-                EditorUtility.DisplayDialog(L10n.Tr("Cannot Delete"), message, L10n.Tr("Ok"));
+                EditorUtility.DisplayDialog(L10n.Tr("Cannot Delete"), message, L10n.Tr("OK"));
             }
 
             PackageManager.Client.Resolve(false);

@@ -45,19 +45,9 @@ namespace UnityEditor
             HandleUtility.EndHandles();
         }
 
-        [Obsolete("Datawatch usage will be removed", false)]
-        static void UpdateDataWatch()
-        {
-            DataWatchService.sharedInstance.PollNativeData();
-        }
-
         [RequiredByNativeCode]
         static void UpdateSchedulers()
         {
-#pragma warning disable 612,618, 619
-            UpdateDataWatch();
-#pragma warning restore 612,618, 619
-
             UIEventRegistration.UpdateSchedulers();
         }
 
@@ -96,8 +86,6 @@ namespace UnityEditor
                 HashSet<VisualTreeAsset> uxmlModifiedAssets = null;
                 if (uxmlImportedAssets.Count > 0)
                 {
-                    UXMLImporterImpl.logger.FinishImport();
-
                     // the inline stylesheet cache might get out of date.
                     // Usually called by the USS importer, which might not get called here
                     StyleSheetCache.ClearCaches();

@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
+using UnityEditor.UIElements;
 
 namespace Unity.UI.Builder
 {
@@ -40,7 +41,7 @@ namespace Unity.UI.Builder
         readonly BuilderSelection m_Selection;
         readonly BuilderLibraryDragger m_Dragger;
         readonly BuilderTooltipPreview m_TooltipPreview;
-        readonly TextField m_SearchField;
+        readonly ToolbarSearchField m_SearchField;
 
         readonly ToggleButtonGroup m_HeaderButtonStrip;
         readonly VisualElement m_LibraryContentContainer;
@@ -67,7 +68,7 @@ namespace Unity.UI.Builder
         [SerializeField] LibraryViewMode m_ViewMode = LibraryViewMode.IconTile;
         [SerializeField] BuilderLibraryTab m_ActiveTab = BuilderLibraryTab.Standard;
 
-        internal TextField searchField => m_SearchField;
+        internal ToolbarSearchField searchField => m_SearchField;
 
         int defaultVisualElementType => EditorPrefs.GetInt(BuilderConstants.LibraryDefaultVisualElementType, (int)DefaultVisualElementType.Styled);
 
@@ -99,7 +100,7 @@ namespace Unity.UI.Builder
 
             m_HeaderButtonStrip = this.Q<ToggleButtonGroup>();
 
-            m_SearchField = this.Q<TextField>(k_SearchFieldName);
+            m_SearchField = this.Q<ToolbarSearchField>(k_SearchFieldName);
             m_SearchField.RegisterValueChangedCallback(e => UpdateSearchFilter(e.newValue));
 
             m_NoResultsLabel = this.Q<Label>(k_NoResultsName);
@@ -108,7 +109,7 @@ namespace Unity.UI.Builder
             var libraryItems = new[] { BuilderConstants.LibraryStandardControlsTabName, BuilderConstants.LibraryProjectTabName };
             foreach (var item in libraryItems)
             {
-                m_HeaderButtonStrip.Add(new Button() { name = item, text = item, tooltip = item.ToLower() });
+                m_HeaderButtonStrip.Add(new Button() { name = item, text = item });
             }
             m_HeaderButtonStrip.RegisterValueChangedCallback(e =>
             {

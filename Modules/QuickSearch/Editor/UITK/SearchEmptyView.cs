@@ -95,6 +95,11 @@ namespace UnityEditor.Search
             }
         }
 
+        public void UpdateView()
+        {
+            BuildView();
+        }
+
         private SearchEmptyViewMode GetDisplayMode()
         {
             if (searchViewFlags.HasFlag(SearchViewFlags.DisableQueryHelpers))
@@ -126,7 +131,7 @@ namespace UnityEditor.Search
             var displayMode = GetDisplayMode();
             if (!forceBuild && displayMode == m_DisplayMode)
             {
-                UpdateView();
+                UpdateViewMinimal();
                 return;
             }
             m_DisplayMode = displayMode;
@@ -156,7 +161,7 @@ namespace UnityEditor.Search
             EnableInClassList(helperBackgroundClassName, m_DisplayMode == SearchEmptyViewMode.HideHelpersNoResult || QueryEmpty());
         }
 
-        void UpdateView()
+        void UpdateViewMinimal()
         {
             if (m_DisplayMode != SearchEmptyViewMode.NoResultWithTips)
                 return;
@@ -329,14 +334,14 @@ namespace UnityEditor.Search
 
             m_Areas = new QueryBuilder(string.Empty);
             var allArea = new QueryAreaBlock(m_Areas, GroupedSearchList.allGroupId, string.Empty);
-            allArea.RegisterCallback<ClickEvent>(OnProviderClicked);
+            allArea.RegisterCallback<MouseDownEvent> (OnProviderClicked);
             m_Areas.AddBlock(allArea);
 
             var providers = SearchUtils.SortProvider(GetActiveHelperProviders(blockMode));
             foreach (var p in providers)
             {
                 var providerBlock = new QueryAreaBlock(m_Areas, p);
-                providerBlock.RegisterCallback<ClickEvent>(OnProviderClicked);
+                providerBlock.RegisterCallback<MouseDownEvent>(OnProviderClicked);
                 m_Areas.AddBlock(providerBlock);
             }
             m_Areas.@readonly = true;
@@ -365,7 +370,7 @@ namespace UnityEditor.Search
             return providersContainer;
         }
 
-        private void OnProviderClicked(ClickEvent evt)
+        private void OnProviderClicked(MouseDownEvent evt)
         {
             if (evt.currentTarget is not QueryAreaBlock area)
                 return;
@@ -376,7 +381,7 @@ namespace UnityEditor.Search
                 var query = CreateQuery(area.ToString());
                 ExecuteQuery(query);
             }
-            else
+            else if (SearchSettings.helperWidgetCurrentArea != GetFilterId(area))
             {
                 SetCurrentArea(area);
             }
@@ -399,6 +404,7 @@ namespace UnityEditor.Search
         private static ISearchQuery CreateQuery(string queryStr)
         {
             var q = new SearchQuery() { searchText = queryStr };
+            q.isTextOnlyQuery = true;
             q.viewState.itemSize = SearchSettings.itemIconSize;
             return q;
         }
@@ -674,6 +680,11 @@ namespace UnityEditor.Search
         void IResultView.OnGroupChanged(string prevGroupId, string newGroupId)
         {
             BuildView();
+        }
+
+        void IResultView.OnItemSourceChanged(ISearchList itemSource)
+        {
+            // Nothing to do
         }
 
         void IResultView.AddSaveQueryMenuItems(SearchContext context, GenericMenu menu)

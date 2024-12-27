@@ -15,13 +15,14 @@ namespace UnityEditor.Build.Profile
     internal class BuildProfilePlayerSettingsEditor
     {
         const string k_PlayerSettingsRoot = "editor-player-settings";
+        const string k_PlayerSettingsFoldout = "player-settings-foldout";
         const string k_PlayerSettingsHelpBox = "custom-player-settings-info-helpbox";
         const string k_PlayerSettingsHelpBoxButton = "custom-player-settings-info-helpbox-button";
         const string k_PlayerSettingsLabel = "player-settings-label";
         const string k_PlayerSettingsOptions = "player-settings-options";
         const string k_ProjectSettingsPath = "ProjectSettings/ProjectSettings.asset";
 
-        VisualElement m_PlayerSettingsRoot;
+        Foldout m_PlayerSettingsFoldout;
 
         Label m_PlayerSettingsLabel;
 
@@ -37,7 +38,9 @@ namespace UnityEditor.Build.Profile
         BuildProfile m_Profile;
         SerializedObject m_ProfileSerializedObject;
 
-        internal static BuildProfilePlayerSettingsEditor CreatePlayerSettingsUI(Action addProfile, VisualElement root, SerializedObject buildProfileSerializedObject)
+        bool m_PlayerSettingsYamlUpdated = false;
+
+        internal static BuildProfilePlayerSettingsEditor CreatePlayerSettingsUI(VisualElement root, SerializedObject buildProfileSerializedObject)
         {
             var buildProfilePlayerSettingsEditor = new BuildProfilePlayerSettingsEditor();
             buildProfilePlayerSettingsEditor.InitializeVisualElements(root);
@@ -55,27 +58,45 @@ namespace UnityEditor.Build.Profile
             buildProfilePlayerSettingsEditor.m_ProfileSerializedObject = buildProfileSerializedObject;
             buildProfilePlayerSettingsEditor.m_PlayerSettingsLabel.text = TrText.playerSettingsLabelText;
 
-            if (BuildProfileContext.IsClassicPlatformProfile(buildProfile))
-                buildProfilePlayerSettingsEditor.ShowPlayerSettingsHelpBox(addProfile, isClassic: true);
-            else if (BuildProfileModuleUtil.HasSerializedPlayerSettings(buildProfilePlayerSettingsEditor.m_Profile))
+            if (BuildProfileModuleUtil.HasSerializedPlayerSettings(buildProfilePlayerSettingsEditor.m_Profile))
                 buildProfilePlayerSettingsEditor.ShowPlayerSettingsEditor();
             else
-                buildProfilePlayerSettingsEditor.ShowPlayerSettingsHelpBox(addProfile, isClassic: false);
+                buildProfilePlayerSettingsEditor.ShowPlayerSettingsHelpBox();
 
             return buildProfilePlayerSettingsEditor;
         }
 
+        internal void EditorUpdate()
+        {
+            if (m_PlayerSettingsYamlUpdated)
+            {
+                RemovePlayerSettingsInspector();
+
+                if (m_Profile.playerSettings == null)
+                    ShowPlayerSettingsHelpBox();
+                else
+                    ShowPlayerSettingsEditor();
+
+                m_PlayerSettingsYamlUpdated = false;
+            }
+        }
+
         void InitializeVisualElements(VisualElement root)
         {
-            m_PlayerSettingsRoot = root.Q<VisualElement>(k_PlayerSettingsRoot);
-            m_PlayerSettingsHelpBox = root.Q<HelpBox>(k_PlayerSettingsHelpBox);
-            m_PlayerSettingsInfoButton = root.Q<Button>(k_PlayerSettingsHelpBoxButton);
-            m_PlayerSettingsLabel = root.Q<Label>(k_PlayerSettingsLabel);
-            m_PlayerSettingsOptions = root.Q<Button>(k_PlayerSettingsOptions);
+            var playerSettingsRoot = root.Q<VisualElement>(k_PlayerSettingsRoot);
+            m_PlayerSettingsFoldout = playerSettingsRoot.Q<Foldout>(k_PlayerSettingsFoldout);
+            m_PlayerSettingsHelpBox = playerSettingsRoot.Q<HelpBox>(k_PlayerSettingsHelpBox);
+            m_PlayerSettingsInfoButton = playerSettingsRoot.Q<Button>(k_PlayerSettingsHelpBoxButton);
+            m_PlayerSettingsLabel = playerSettingsRoot.Q<Label>(k_PlayerSettingsLabel);
+            m_PlayerSettingsOptions = playerSettingsRoot.Q<Button>(k_PlayerSettingsOptions);
+
+            m_PlayerSettingsFoldout.text = TrText.playerSettings;
+            playerSettingsRoot.Show();
         }
 
         void HidePlayerSettingsUI()
         {
+            m_PlayerSettingsFoldout.Hide();
             m_PlayerSettingsLabel.Hide();
             m_PlayerSettingsHelpBox.Hide();
             m_PlayerSettingsInfoButton.Hide();
@@ -86,7 +107,9 @@ namespace UnityEditor.Build.Profile
         {
             m_PlayerSettingsHelpBox.Hide();
 
-            if (m_Profile.playerSettings == null)
+            bool createPlayerSettings = m_Profile.playerSettings == null;
+
+            if (createPlayerSettings)
             {
                 BuildProfileModuleUtil.CreatePlayerSettingsFromGlobal(m_Profile);
                 UpdateBuildProfile();
@@ -94,8 +117,15 @@ namespace UnityEditor.Build.Profile
 
             CreatePlayerSettingsInspector();
 
+            if (createPlayerSettings && m_PlayerSettingsEditor.CopyProjectSettingsToPlayerSettingsExtension())
+                UpdateBuildProfile();
+
             m_PlayerSettingsOptions.clicked += PlayerSettingsOptionMenu;
             m_PlayerSettingsOptions.Show();
+            m_PlayerSettingsFoldout.Show();
+
+            m_Profile.OnPlayerSettingsUpdatedFromYAML -= OnPlayerSettingsUpdatedFromYAML;
+            m_Profile.OnPlayerSettingsUpdatedFromYAML += OnPlayerSettingsUpdatedFromYAML;
         }
 
         void HidePlayerSettingsEditor()
@@ -110,7 +140,11 @@ namespace UnityEditor.Build.Profile
             {
                 var isActiveProfile = BuildProfile.GetActiveBuildProfile() == m_Profile;
                 m_PlayerSettingsEditor = Editor.CreateEditor(m_Profile.playerSettings) as PlayerSettingsEditor;
-                m_PlayerSettingsEditor.ConfigurePlayerSettingsForBuildProfile(m_Profile.moduleName, m_Profile.subtarget == StandaloneBuildSubtarget.Server, isActiveProfile);
+                m_PlayerSettingsEditor.ConfigurePlayerSettingsForBuildProfile(
+                    m_ProfileSerializedObject,
+                    m_Profile.platformGuid,
+                    isActiveProfile,
+                    OnPlayerSettingsEditorChanged);
             }
 
             if (m_PlayerSettingsInspector == null)
@@ -118,7 +152,7 @@ namespace UnityEditor.Build.Profile
                 m_PlayerSettingsInspector = new InspectorElement(m_PlayerSettingsEditor);
                 m_PlayerSettingsInspector.style.flexGrow = 1;
                 m_PlayerSettingsInspector.TrackSerializedObjectValue(m_PlayerSettingsEditor.serializedObject, OnPlayerSettingsEditorChanged);
-                m_PlayerSettingsRoot.Add(m_PlayerSettingsInspector);
+                m_PlayerSettingsFoldout.Add(m_PlayerSettingsInspector);
             }
         }
 
@@ -127,8 +161,8 @@ namespace UnityEditor.Build.Profile
             if (m_PlayerSettingsEditor != null)
                 UnityEngine.Object.DestroyImmediate(m_PlayerSettingsEditor);
 
-            if (m_PlayerSettingsInspector != null && m_PlayerSettingsRoot.Contains(m_PlayerSettingsInspector))
-                m_PlayerSettingsRoot.Remove(m_PlayerSettingsInspector);
+            if (m_PlayerSettingsInspector != null && m_PlayerSettingsFoldout.Contains(m_PlayerSettingsInspector))
+                m_PlayerSettingsFoldout.Remove(m_PlayerSettingsInspector);
 
             m_PlayerSettingsInspector = null;
             m_PlayerSettingsEditor = null;
@@ -140,18 +174,18 @@ namespace UnityEditor.Build.Profile
             UpdateBuildProfile();
         }
 
-        void ShowPlayerSettingsHelpBox(Action addProfile, bool isClassic)
+        void OnPlayerSettingsUpdatedFromYAML()
         {
+            m_PlayerSettingsYamlUpdated = true;
+        }
+
+        void ShowPlayerSettingsHelpBox()
+        {
+            m_PlayerSettingsFoldout.Hide();
             m_PlayerSettingsOptions.Hide();
-
-            m_PlayerSettingsHelpBox.text = isClassic ? TrText.playerSettingsClassicInfo : TrText.playerSettingsInfo;
-            m_PlayerSettingsInfoButton.text = isClassic ? TrText.addBuildProfile : TrText.customizePlayerSettingsButton;
-
-            if (isClassic)
-                m_PlayerSettingsInfoButton.clicked += addProfile;
-            else
-                m_PlayerSettingsInfoButton.clicked += ShowPlayerSettingsEditor;
-
+            m_PlayerSettingsHelpBox.text = TrText.playerSettingsInfo;
+            m_PlayerSettingsInfoButton.text = TrText.customizePlayerSettingsButton;
+            m_PlayerSettingsInfoButton.clicked += ShowPlayerSettingsEditor;
             m_PlayerSettingsLabel.Show();
             m_PlayerSettingsHelpBox.Show();
             m_PlayerSettingsInfoButton.Show();
@@ -160,8 +194,9 @@ namespace UnityEditor.Build.Profile
         void PlayerSettingsOptionMenu()
         {
             bool isDataSameAsProjSettings = BuildProfileModuleUtil.IsDataEqualToProjectSettings(m_Profile.playerSettings);
+            isDataSameAsProjSettings = isDataSameAsProjSettings && m_PlayerSettingsEditor.IsPlayerSettingsExtensionDataEqualToProjectSettings();
             var menu = new GenericMenu();
-            menu.AddItem(TrText.playerSetttingsRemove, false, RemovePlayerSettings);
+            menu.AddItem(TrText.playerSettingsRemove, false, RemovePlayerSettings);
             menu.AddItem(TrText.playerSettingsReset, false, isDataSameAsProjSettings ? null : ResetToProjectSettingsValues);
             menu.ShowAsContext();
         }
@@ -170,35 +205,87 @@ namespace UnityEditor.Build.Profile
         {
             bool removePlayerSettings = EditorUtility.DisplayDialog(TrText.removePlayerSettingsDialogTitle,
                                                                     TrText.removePlayerSettingsDialogMessage,
-                                                                    TrText.playerSettingsContinue,
-                                                                    TrText.playerSettingsCancel);
+                                                                    TrText.continueButtonText,
+                                                                    TrText.cancelButtonText);
             if (!removePlayerSettings)
                 return;
+
+            var targetName = NamedBuildTarget.FromBuildTargetGroup(BuildPipeline.GetBuildTargetGroup(m_Profile.buildTarget));
+            var customScriptingDefines = PlayerSettings.GetScriptingDefineSymbols(targetName);
+            var customAdditionalCompilerArguments = PlayerSettings.GetAdditionalCompilerArguments(targetName);
+
+            // we only want to show the restart editor prompt when making changes to an active profile
+            // otherwise we continue normally with removing the player settings
+            if (m_Profile == BuildProfileContext.activeProfile)
+            {
+                // success is we either found no settings to restart or we did and the user agreed to restart the editor
+                // failure here is if we found settings requiring restart but the user declined to cancel
+                // so we don't continue with the action
+                var isSuccess = BuildProfileModuleUtil.HandlePlayerSettingsChanged(m_Profile, null);
+                if (!isSuccess)
+                {
+                    return;
+                }
+            }
 
             HidePlayerSettingsEditor();
             BuildProfileModuleUtil.RemovePlayerSettings(m_Profile);
             UpdateBuildProfile();
-            ShowPlayerSettingsHelpBox(null, isClassic: false);
+            CheckPropertiesThatRequireRecompilation(targetName, customScriptingDefines, customAdditionalCompilerArguments);
+
         }
 
         void ResetToProjectSettingsValues()
         {
             bool resetPlayerSettings = EditorUtility.DisplayDialog(TrText.resetPlayerSettingsDialogTitle,
                                                                     TrText.resetPlayerSettingsDialogMessage,
-                                                                    TrText.playerSettingsContinue,
-                                                                    TrText.playerSettingsCancel);
+                                                                    TrText.continueButtonText,
+                                                                    TrText.cancelButtonText);
 
             if (!resetPlayerSettings)
                 return;
 
+            // we only want to show the restart editor prompt when making changes to an active profile
+            // otherwise we continue normally with resetting the values to project settings
+            if (m_Profile == BuildProfileContext.activeProfile)
+            {
+                // we should check if the player setting overrides we're updating differ from the project settings
+                // in that case wes should check for any setting that requires an editor restart to take effect
+                // if it does, we should a restart prompt. if the user cancels, we cancel the resetting action
+                var isSuccess = BuildProfileModuleUtil.HandlePlayerSettingsChanged(m_Profile, null);
+                if (!isSuccess)
+                {
+                    return;
+                }
+            }
+
+            var targetName = NamedBuildTarget.FromBuildTargetGroup(BuildPipeline.GetBuildTargetGroup(m_Profile.buildTarget));
+            var customScriptingDefines = PlayerSettings.GetScriptingDefineSymbols(targetName);
+            var customAdditionalCompilerArguments = PlayerSettings.GetAdditionalCompilerArguments(targetName);
+
             var playerSettings = AssetDatabase.LoadAssetAtPath<PlayerSettings>(k_ProjectSettingsPath);
             var preset = new Preset(playerSettings);
             preset.ApplyTo(m_Profile.playerSettings);
+            m_PlayerSettingsEditor.CopyProjectSettingsToPlayerSettingsExtension();
 
             UpdateBuildProfile();
 
             RemovePlayerSettingsInspector();
             CreatePlayerSettingsInspector();
+            CheckPropertiesThatRequireRecompilation(targetName, customScriptingDefines, customAdditionalCompilerArguments);
+        }
+
+        void CheckPropertiesThatRequireRecompilation(NamedBuildTarget targetName, string customScriptingDefines, string[] customAdditionalCompilerArguments)
+        {
+            if (BuildProfile.GetActiveBuildProfile() != m_Profile)
+                return;
+
+            // Check if current global player settings that we switched to has different script defines
+            // when compared to the custom player settings
+            var additionalCompilerArguments = PlayerSettings.GetAdditionalCompilerArguments(targetName);
+            var scriptingDefines = PlayerSettings.GetScriptingDefineSymbols(targetName);
+            if (customScriptingDefines != scriptingDefines || !ArrayUtility.ArrayEquals(customAdditionalCompilerArguments, additionalCompilerArguments))
+                BuildProfileModuleUtil.RequestScriptCompilation(m_Profile);
         }
 
         void UpdateBuildProfile()
@@ -206,7 +293,6 @@ namespace UnityEditor.Build.Profile
             BuildProfileModuleUtil.SerializePlayerSettings(m_Profile);
             m_ProfileSerializedObject.ApplyModifiedProperties();
             EditorUtility.SetDirty(m_Profile);
-            AssetDatabase.SaveAssetIfDirty(m_Profile);
         }
     }
 }

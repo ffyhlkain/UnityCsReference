@@ -530,7 +530,19 @@ namespace UnityEditor
             public static readonly GUIContent exitEditMode = EditorGUIUtility.TrTextContent("Exit Light Probe Editing", "Exit Light Probe Positions Editing.");
             public static readonly GUIContent toolIcon = EditorGUIUtility.TrIconContent("EditCollider", "Edit Light Probe Group.\n\nUse the overlay to add Light Probes and modify probe positions.");
             public static readonly GUIContent editModeInfoBox = EditorGUIUtility.TrTextContentWithIcon("Use the <b>Edit Light Probe Group Tool</b> in the <b>Scene Tools Overlay</b> to edit Light Probe positions.", MessageType.Info);
-            public static readonly GUIStyle editModeInfoBoxStyle = new GUIStyle(EditorStyles.helpBox) { richText = true };
+            // This is a property due to [UUM-78837](https://jira.unity3d.com/browse/UUM-78837)
+            // Create GUIStyle lazily on request rather than on static class initialization where the EditorStyles.helpBox may not be initialized yet.
+            public static GUIStyle editModeInfoBoxStyle 
+            {
+                get
+                {
+                    if (s_EditModeInfoBoxStyle == null)
+                        s_EditModeInfoBoxStyle = new GUIStyle(EditorStyles.helpBox) { richText = true };
+                    return s_EditModeInfoBoxStyle;
+                }
+            }
+
+            static GUIStyle s_EditModeInfoBoxStyle;
         }
 
         public LightProbeGroupOverlay(LightProbeGroup target, LightProbeGroupEditor editor)
@@ -539,6 +551,9 @@ namespace UnityEditor
             m_Editor = editor;
 
             displayName = "Edit Light Probes";
+            collapsedIcon = EditorGUIUtility.LoadIcon("EditCollider");
+
+            displayedChanged += value => m_Visible = value;
         }
 
         public override void OnGUI()
@@ -621,7 +636,8 @@ namespace UnityEditor
             return vec1 - vec2;
         }
 
-        public override bool visible => true;
+        public override bool visible => m_Visible;
+        private bool m_Visible = true;
     }
 
     [EditorTool("Light Probe Group", typeof(LightProbeGroup))]

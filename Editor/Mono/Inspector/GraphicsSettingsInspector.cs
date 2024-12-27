@@ -10,11 +10,13 @@ using UnityEditor.Inspector.GraphicsSettingsInspectors;
 using UnityEditor.UIElements;
 using UnityEditor.UIElements.ProjectSettings;
 using UnityEditorInternal;
+using UnityEditor.Rendering;
+using UnityEditor.Build.Profile;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.UIElements;
 using Button = UnityEngine.UIElements.Button;
-using UnityEditor.Rendering;
+using HelpBox = UnityEngine.UIElements.HelpBox;
 
 namespace UnityEditor
 {
@@ -23,6 +25,7 @@ namespace UnityEditor
     {
         internal static class GraphicsSettingsData
         {
+            internal const string builtIn = "Built-In";
             internal const string bodyTemplateBuiltInOnly = "UXML/ProjectSettings/GraphicsSettingsEditor-Builtin.uxml";
             internal const string bodyTemplateSRP = "UXML/ProjectSettings/GraphicsSettingsEditor-SRP.uxml";
             internal const string helpBoxesTemplateForSRP = "UXML/ProjectSettings/GraphicsSettingsEditor-HelpBoxes.uxml";
@@ -30,6 +33,8 @@ namespace UnityEditor
 
             internal static GUIContent builtInWarningText =
                 EditorGUIUtility.TrTextContent("A Scriptable Render Pipeline is in use. Settings in the Built-In Render Pipeline are not currently in use.");
+            internal static readonly string k_BuildProfileGraphicsSettingsOverrideWarning =
+                L10n.Tr("The current active build profile has overridden certain Graphics settings. To ensure that the correct settings are included in your build, see the Build Profiles...");
         }
         internal IEnumerable<GraphicsSettingsInspectorUtility.GlobalSettingsContainer> globalSettings => m_GlobalSettings;
 
@@ -38,9 +43,15 @@ namespace UnityEditor
         VisualElement m_CurrentRoot;
         ScrollView m_ScrollView;
         List<GraphicsSettingsInspectorUtility.GlobalSettingsContainer> m_GlobalSettings;
+        HelpBox m_BuildProfileGraphicsSettingsOverrideWarning;
+        internal static Action OnActiveProfileGraphicsSettingsChanged;
+
+        readonly Dictionary<VisualElement, List<Label>> m_Labels = new();
+        string m_CurrentText;
 
         bool m_FinishedInitialization;
-        uint m_LastListsHash;
+        int m_LastListsHash;
+        int m_GeometryChangedEventCounter;
 
         // As we use multiple IMGUI container while porting everything to UITK we will call serializedObject.Update in first separate IMGUI container.
         // This way we don't need to do it in each following containers.
@@ -49,52 +60,48 @@ namespace UnityEditor
             return new IMGUIContainer(() => serializedObject.Update());
         }
 
-        internal void Initialization()
+        internal void Reload(bool globalSettingsExist, List<GraphicsSettingsInspectorUtility.GlobalSettingsContainer> globalSettingsContainers)
         {
-            m_LastListsHash = GraphicsSettingsInspectorUtility.ComputeRenderPipelineGlobalSettingsListHash(serializedObject);
+            var newHash = GraphicsSettingsInspectorUtility.ComputeRenderPipelineGlobalSettingsListHash(globalSettingsContainers);
+            if (!m_FinishedInitialization || m_LastListsHash == newHash)
+                return;
+
+            Dispose();
+            Create(m_CurrentRoot, globalSettingsExist, globalSettingsContainers);
+
+            m_LastListsHash = newHash;
         }
 
-        internal void Reload(uint hashToCheck)
-        {
-            if (m_FinishedInitialization && m_LastListsHash != hashToCheck)
-            {
-                Dispose();
-
-                Create(m_CurrentRoot);
-
-                m_LastListsHash = hashToCheck;
-            }
-        }
-
-        internal VisualElement Create(VisualElement root)
+        internal void Create(VisualElement root, bool globalSettingsExist, List<GraphicsSettingsInspectorUtility.GlobalSettingsContainer> globalSettingsContainers)
         {
             m_VisibilityController.Initialize();
             Undo.undoRedoEvent += OnUndoRedoPerformed;
 
             m_CurrentRoot = root;
             m_CurrentRoot.Add(ObjectUpdater());
-
-            var globalSettingsExist = GraphicsSettingsInspectorUtility.GatherGlobalSettingsFromSerializedObject(serializedObject, out var settingsContainers);
-            m_GlobalSettings = settingsContainers;
+            m_GlobalSettings = globalSettingsContainers;
 
             var visualTreeAsset = EditorGUIUtility.Load(globalSettingsExist ? GraphicsSettingsData.bodyTemplateSRP : GraphicsSettingsData.bodyTemplateBuiltInOnly) as VisualTreeAsset;
             var content = visualTreeAsset.Instantiate();
             root.Add(content);
 
             Setup(globalSettingsExist);
-            return content;
+
+            m_LastListsHash = GraphicsSettingsInspectorUtility.ComputeRenderPipelineGlobalSettingsListHash(globalSettingsContainers);
         }
 
         internal void Dispose()
         {
             UserSettings.ToConfig(m_CurrentRoot);
 
+            m_Labels.Clear();
             m_CurrentRoot.Clear();
 
             m_VisibilityController.Clear();
             m_VisibilityController.Dispose();
 
             Undo.undoRedoEvent -= OnUndoRedoPerformed;
+            OnActiveProfileGraphicsSettingsChanged -= UpdateBuildProfileGraphicsSettingsOverrideWarning;
             m_FinishedInitialization = false;
         }
 
@@ -106,8 +113,14 @@ namespace UnityEditor
                 .Query<ProjectSettingsElementWithSO>()
                 .ForEach(d => d.Initialize(serializedObject));
 
+            m_BuildProfileGraphicsSettingsOverrideWarning = m_CurrentRoot.Query<HelpBox>("build-profile-override-warning-help-box");
+            m_BuildProfileGraphicsSettingsOverrideWarning.text = GraphicsSettingsData.k_BuildProfileGraphicsSettingsOverrideWarning;
+            UpdateBuildProfileGraphicsSettingsOverrideWarning();
+            OnActiveProfileGraphicsSettingsChanged += UpdateBuildProfileGraphicsSettingsOverrideWarning;
+
             BindEnumFieldWithFadeGroup(m_CurrentRoot, "Lightmap", ShaderUtil.CalculateLightmapStrippingFromCurrentScene);
             BindEnumFieldWithFadeGroup(m_CurrentRoot, "Fog", ShaderUtil.CalculateFogStrippingFromCurrentScene);
+            BindEnumFieldToLightProbe(m_CurrentRoot);
 
             if (globalSettingsExist)
             {
@@ -153,20 +166,18 @@ namespace UnityEditor
 
             SetupTransparencySortMode(builtInTemplate);
 
-            const string builtIn = "Built-In";
-
-            var builtInSettingsContainer = builtInTemplate.MandatoryQ<VisualElement>($"{builtIn}SettingsContainer");
+            var builtInSettingsContainer = builtInTemplate.MandatoryQ<VisualElement>($"{GraphicsSettingsData.builtIn}SettingsContainer");
             var builtInHelpBoxes = GraphicsSettingsInspectorUtility.CreateRPHelpBox(m_VisibilityController, null);
             builtInSettingsContainer.Insert(0, builtInHelpBoxes);
             builtInHelpBoxes.MandatoryQ<HelpBox>("CurrentPipelineWarningHelpBox").text = GraphicsSettingsData.builtInWarningText.text;
 
             // If we open the settings page for the first time we check the current render pipeline.
             var settingsPipelineFullTypeName = UserSettings.FromConfig().pipelineFullTypeName;
-            var selectedTab  = string.IsNullOrEmpty(settingsPipelineFullTypeName) ? GraphicsSettings.currentRenderPipelineAssetType?.ToString() : settingsPipelineFullTypeName ;
+            var selectedTab = string.IsNullOrEmpty(settingsPipelineFullTypeName) ? GraphicsSettings.currentRenderPipelineAssetType?.ToString() : settingsPipelineFullTypeName;
 
-            var builtinActive = string.IsNullOrEmpty(selectedTab) || selectedTab.Equals(builtIn);
-            var tabButton = GraphicsSettingsInspectorUtility.CreateNewTab(m_TabbedView, builtIn, builtInSettingsContainer, builtinActive);
-            tabButton.userData = builtIn;
+            var builtinActive = string.IsNullOrEmpty(selectedTab) || selectedTab.Equals(GraphicsSettingsData.builtIn);
+            var tabButton = GraphicsSettingsInspectorUtility.CreateNewTab(m_TabbedView, GraphicsSettingsData.builtIn, builtInSettingsContainer, builtinActive);
+            tabButton.userData = GraphicsSettingsData.builtIn;
 
             //Add SRP tabs
             foreach (var globalSettingsContainer in m_GlobalSettings)
@@ -186,7 +197,57 @@ namespace UnityEditor
             }
         }
 
-        int m_GeometryChangedEventCounter;
+        void SearchChanged()
+        {
+            var settingsWindow = EditorWindow.GetWindow<ProjectSettingsWindow>(null, false);
+            if (settingsWindow.GetCurrentProvider() is not GraphicsSettingsProvider provider)
+                return;
+
+            var currentText = provider.settingsWindow.GetSearchText();
+            if (string.IsNullOrWhiteSpace(currentText))
+                return;
+
+            if (currentText.Equals(m_CurrentText, StringComparison.Ordinal))
+                return;
+
+            m_CurrentText = currentText;
+
+            if (m_Labels.Count == 0)
+            {
+                foreach (var tab in m_TabbedView.tabs)
+                {
+                    m_Labels.Add(tab.Target, tab.Target.Query<Label>().ToList());
+                }
+            }
+
+            var highlighted = AnyLabelMatchSearch(m_TabbedView.ActiveTab.Target);
+            if (highlighted)
+                return;
+
+            foreach (var tab in m_TabbedView.tabs)
+            {
+                if(tab == m_TabbedView.ActiveTab)
+                    continue;
+
+                var highlightedInDifferentTab = AnyLabelMatchSearch(tab.Target);
+                if (!highlightedInDifferentTab)
+                    continue;
+
+                m_TabbedView.Activate(tab);
+                return;
+            }
+
+            bool AnyLabelMatchSearch(VisualElement element)
+            {
+                var list = m_Labels[element];
+                foreach (var label in list)
+                {
+                    if (SettingsWindow.Styles.TagRegex.IsMatch(label.text))
+                        return true;
+                }
+                return false;
+            }
+        }
 
         void OnMainScrollViewGeometryChanged(GeometryChangedEvent evt)
         {
@@ -195,6 +256,7 @@ namespace UnityEditor
                 m_ScrollView.contentContainer.UnregisterCallback<GeometryChangedEvent>(OnMainScrollViewGeometryChanged);
                 m_GeometryChangedEventCounter = 0;
                 m_FinishedInitialization = true;
+                m_TabbedView?.schedule.Execute(SearchChanged).Every(100);
             }
 
             void UnregisterAfterLastGeometryChange()
@@ -225,10 +287,16 @@ namespace UnityEditor
             var enumMode = content.MandatoryQ<EnumField>($"{id}Modes");
             var enumModeGroup = content.MandatoryQ<VisualElement>($"{id}ModesGroup");
             var enumModeProperty = serializedObject.FindProperty($"m_{id}Stripping");
-            var lightmapModesUpdate = UIElementsEditorUtility.BindSerializedProperty<StrippingModes>(enumMode, enumModeProperty,
+            UIElementsEditorUtility.BindSerializedProperty<StrippingModes>(enumMode, enumModeProperty,
                 mode => UIElementsEditorUtility.SetVisibility(enumModeGroup, mode == StrippingModes.Custom));
-            lightmapModesUpdate?.Invoke();
             content.MandatoryQ<Button>($"Import{id}FromCurrentScene").clicked += buttonCallback;
+        }
+
+        void BindEnumFieldToLightProbe(VisualElement content)
+        {
+            var enumMode = content.MandatoryQ<EnumField>("LightProbe");
+            var enumModeProperty = serializedObject.FindProperty(enumMode.bindingPath);
+            UIElementsEditorUtility.BindSerializedProperty<LightProbeOutsideHullStrategy>(enumMode, enumModeProperty);
         }
 
         void SetupTransparencySortMode(VisualElement root)
@@ -237,6 +305,14 @@ namespace UnityEditor
             var transparencySortAxis = root.MandatoryQ<PropertyField>("TransparencySortAxis");
             transparencySortMode.RegisterValueChangeCallback(evt =>
                 UIElementsEditorUtility.SetVisibility(transparencySortAxis, (TransparencySortMode)evt.changedProperty.enumValueIndex == TransparencySortMode.CustomAxis));
+        }
+
+        void UpdateBuildProfileGraphicsSettingsOverrideWarning()
+        {
+            if (BuildProfileContext.ActiveProfileHasGraphicsSettings())
+                m_BuildProfileGraphicsSettingsOverrideWarning.style.display = DisplayStyle.Flex;
+            else
+                m_BuildProfileGraphicsSettingsOverrideWarning.style.display = DisplayStyle.None;
         }
 
         [Serializable]
@@ -270,7 +346,7 @@ namespace UnityEditor
                 }
                 else
                 {
-                    userSettings.pipelineFullTypeName = "Built-In";
+                    userSettings.pipelineFullTypeName = GraphicsSettingsData.builtIn;
                 }
 
                 EditorUserSettings.SetConfigValue(s_Key, JsonUtility.ToJson(userSettings));
@@ -289,7 +365,9 @@ namespace UnityEditor
                 var settingsIterator = serializedGlobalSettings.FindProperty(RenderPipelineGraphicsSettingsManager.serializationPathToCollection);
 
                 using (new Notifier.Scope(settingsIterator, updateStateNow: false))
-                { /* Nothing to do: changes already done before this callback */ }
+                {
+                    /* Nothing to do: changes already done before this callback */
+                }
             });
         }
     }
@@ -409,7 +487,6 @@ namespace UnityEditor
     internal class GraphicsSettingsProvider : SettingsProvider
     {
         internal static readonly string s_GraphicsSettingsProviderPath = "Project/Graphics";
-        internal static readonly string s_GraphicsSettingsProviderAssetPath = "ProjectSettings/GraphicsSettings.asset";
         internal GraphicsSettingsInspector inspector;
 
         [SettingsProvider]
@@ -424,17 +501,12 @@ namespace UnityEditor
 
         internal GraphicsSettingsProvider(string path, SettingsScope scopes, IEnumerable<string> keywords = null) : base(path, scopes, keywords)
         {
+            UpdateKeywords();
             activateHandler = (_, root) =>
             {
-                var settingsObj = AssetDatabase.LoadAllAssetsAtPath(s_GraphicsSettingsProviderAssetPath);
-                if (settingsObj == null)
-                    return;
-
-                inspector = Editor.CreateEditor(settingsObj) as GraphicsSettingsInspector;
-                inspector.Initialization();
-
-                var content = inspector.Create(root);
-                this.keywords = CreateKeywordsList(content);
+                var (graphicsSettings, globalSettingsExist, globalSettingsContainers) = UpdateKeywords();
+                inspector = Editor.CreateEditor(graphicsSettings) as GraphicsSettingsInspector;
+                inspector.Create(root, globalSettingsExist, globalSettingsContainers);
             };
             deactivateHandler = (() =>
             {
@@ -446,14 +518,35 @@ namespace UnityEditor
             });
         }
 
-        List<string> CreateKeywordsList(VisualElement content)
+        public (UnityEngine.Object, bool, List<GraphicsSettingsInspectorUtility.GlobalSettingsContainer>) UpdateKeywords()
         {
             var keywordsList = new List<string>();
             keywordsList.AddRange(GetSearchKeywordsFromGUIContentProperties<GraphicsSettingsInspectorTierSettings.Styles>());
             keywordsList.AddRange(GetSearchKeywordsFromGUIContentProperties<GraphicsSettingsInspectorShaderPreload.Styles>());
-            keywordsList.AddRange(GetSearchKeywordsFromPath(s_GraphicsSettingsProviderAssetPath));
-            keywordsList.AddRange(GetSearchKeywordsFromVisualElementTree(content));
-            return keywordsList;
+
+            var graphicsSettings = GraphicsSettings.GetGraphicsSettings();
+            var graphicsSettingsSO = new SerializedObject(graphicsSettings);
+            keywordsList.AddRange(GetSearchKeywordsFromSerializedObject(graphicsSettingsSO));
+
+            var globalSettingsExist = GraphicsSettingsInspectorUtility.GatherGlobalSettingsFromSerializedObject(graphicsSettingsSO, out var globalSettingsContainers);
+            if (globalSettingsExist)
+            {
+                foreach (var globalSetting in globalSettingsContainers)
+                    keywordsList.AddRange(GetSearchKeywordsFromSerializedObject(globalSetting.serializedObject));
+            }
+
+            keywords = keywordsList;
+            return (graphicsSettings, globalSettingsExist, globalSettingsContainers);
+        }
+
+        internal void Reload()
+        {
+            if (inspector == null)
+                return;
+
+            //Ensure of the Global Settings can update keywords as new settings may have been added
+            var (_, globalSettingsExist, globalSettingsContainers) = UpdateKeywords();
+            inspector.Reload(globalSettingsExist, globalSettingsContainers);
         }
     }
 }

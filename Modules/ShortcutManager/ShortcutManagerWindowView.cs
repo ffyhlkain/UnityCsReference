@@ -5,6 +5,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using UnityEditor.Experimental;
@@ -76,6 +77,13 @@ namespace UnityEditor.ShortcutManagement
         public void RefreshShortcutList()
         {
             m_ShortcutsTable.Rebuild();
+        }
+
+        void RefreshListSelection()
+        {
+            // When the bindings are updated in the "Binding Conflicts" section reset the selected index
+            if(m_ViewController.IsCategorySelected(ShortcutManagerWindowViewController.k_CommandsWithConflicts))
+                m_ShortcutsTable.selectedIndex = -1;
         }
 
         public void UpdateSearchFilterOptions()
@@ -471,7 +479,7 @@ namespace UnityEditor.ShortcutManagement
             {
                 EditorUtility.DisplayDialog(L10n.Tr("No Profile"),
                     L10n.Tr($"The \"{m_ViewController.activeProfile}\" profile contains no shortcut overrides so there is nothing to export.\n\nCreate a new profile with shortcut key overrides and try again."),
-                    L10n.Tr("Ok"));
+                    L10n.Tr("OK"));
                 return;
             }
 
@@ -658,10 +666,18 @@ namespace UnityEditor.ShortcutManagement
                 var mangledBinding = entry.combinations.FirstOrDefault().ToString().Replace("/", "Slash");
                 var rootItemLabel = $"{mangledPath} ({mangledBinding})";
                 if (entry.overridden)
-                    menu.AddItem(new GUIContent($"{rootItemLabel}/{L10n.Tr("Reset to default")}"), false, (x) => { m_ViewController.ResetToDefault(entry);}, entry);
+                    menu.AddItem(new GUIContent($"{rootItemLabel}/{L10n.Tr("Reset to default")}"), false, (x) =>
+                    {
+                        m_ViewController.ResetToDefault(entry);
+                        RefreshListSelection();
+                    }, entry);
                 else
                     menu.AddDisabledItem(new GUIContent($"{rootItemLabel}/{L10n.Tr("Reset to default")}"));
-                menu.AddItem(new GUIContent($"{rootItemLabel}/{L10n.Tr("Remove shortcut")}"), false, (x) => { m_ViewController.RemoveBinding(entry);}, entry);
+                menu.AddItem(new GUIContent($"{rootItemLabel}/{L10n.Tr("Remove shortcut")}"), false, (x) =>
+                {
+                    m_ViewController.RemoveBinding(entry);
+                    RefreshListSelection();
+                }, entry);
             }
 
             return menu;
@@ -1569,6 +1585,7 @@ namespace UnityEditor.ShortcutManagement
 
         void Apply()
         {
+            m_KeyDown.Clear();
             value = m_WorkingValue;
             if (hasFocus)
                 focusController.SwitchFocus(null);
@@ -1626,6 +1643,13 @@ namespace UnityEditor.ShortcutManagement
         [Serializable]
         public new class UxmlSerializedData : SearchFieldBase<ShortcutTextField, List<KeyCombination>>.UxmlSerializedData
         {
+            [RegisterUxmlCache]
+            [Conditional("UNITY_EDITOR")]
+            public new static void Register()
+            {
+                SearchFieldBase<ShortcutTextField, List<KeyCombination>>.UxmlSerializedData.Register();
+            }
+
             public override object CreateInstance() => new ShortcutSearchField();
         }
 

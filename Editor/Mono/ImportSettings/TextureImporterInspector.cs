@@ -127,10 +127,12 @@ namespace UnityEditor
             TextureImporterFormat.DXT5Crunched,
             TextureImporterFormat.ETC_RGB4Crunched,
             TextureImporterFormat.ETC2_RGBA8Crunched,
+#pragma warning disable CS0618 // TextureImporterFormat.PVRTC_* members are obsolete
             TextureImporterFormat.PVRTC_RGB2,
             TextureImporterFormat.PVRTC_RGB4,
             TextureImporterFormat.PVRTC_RGBA2,
             TextureImporterFormat.PVRTC_RGBA4,
+#pragma warning restore CS0618
             TextureImporterFormat.ETC_RGB4,
             TextureImporterFormat.ETC2_RGB4,
             TextureImporterFormat.ETC2_RGB4_PUNCHTHROUGH_ALPHA,
@@ -659,7 +661,11 @@ namespace UnityEditor
         public override void OnEnable()
         {
             base.OnEnable();
+            Initialize();
+        }
 
+        void Initialize()
+        {
             s_DefaultPlatformName = TextureImporter.defaultPlatformName; // Can't be called everywhere so we save it here for later use.
 
             m_ShowAdvanced = EditorPrefs.GetBool("TextureImporterShowAdvanced", m_ShowAdvanced);
@@ -1501,6 +1507,7 @@ namespace UnityEditor
             }
         }
 
+
         public override void OnInspectorGUI()
         {
             serializedObject.Update();
@@ -1816,6 +1823,12 @@ namespace UnityEditor
             //We need to update the VT system to actually stream these tiles into VRAM and render the textures correctly.
             if (textureInspector != null && textureInspector.hasTargetUsingVTMaterial)
                 VirtualTexturing.System.Update();
+        }
+
+        internal override void PostSerializedObjectCreation()
+        {
+            base.PostSerializedObjectCreation();
+            Initialize();
         }
 
         private void RefreshPreviewChannelSelection()

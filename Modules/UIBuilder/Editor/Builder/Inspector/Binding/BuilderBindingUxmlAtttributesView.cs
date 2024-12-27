@@ -100,7 +100,7 @@ namespace Unity.UI.Builder
         public void SetAttributesOwnerFromCopy(VisualTreeAsset asset, VisualElement visualElement)
         {
             // Work on a copy of the VisualTreeAsset so that we can discard or apply the changes later.
-            m_VisualTreeAssetCopy = asset.DeepCopy();
+            m_VisualTreeAssetCopy = asset.DeepCopy(false);
             m_VisualTreeAssetCopy.name += "(Binding Copy)";
 
             // Create a copy of the VisualElement as well.
@@ -167,7 +167,7 @@ namespace Unity.UI.Builder
             UndoRecordDocument(BuilderConstants.ChangeAttributeValueUndoMessage);
             var builder = Builder.ActiveWindow;
 
-            var styleRows = fieldsContainer.Query<BuilderStyleRow>().ToList();
+            var styleRows = attributesContainer.Query<BuilderStyleRow>().ToList();
             foreach (var styleRow in styleRows)
             {
                 var fields = styleRow.GetLinkedFieldElements();
@@ -275,7 +275,7 @@ namespace Unity.UI.Builder
                 m_ConvertersToSourceField = row.GetLinkedFieldElements()[0];
             }
 
-            fieldsContainer.Add(root);
+            attributesContainer.Add(root);
 
             // Add any additional fields from inherited types.
             var property = m_CurrentElementSerializedObject.FindProperty(bindingSerializedPropertyRootPath);

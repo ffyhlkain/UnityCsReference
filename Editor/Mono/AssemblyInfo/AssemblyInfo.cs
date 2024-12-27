@@ -45,6 +45,7 @@ using UnityEngine;
 [assembly: InternalsVisibleTo("UnityEditor.Graphs")]
 [assembly: InternalsVisibleTo("UnityEditor.UWP.Extensions")]
 [assembly: InternalsVisibleTo("UnityEditor.iOS.Extensions.Common")]
+[assembly: InternalsVisibleTo("UnityEditor.Apple.Extensions.Common")]
 [assembly: InternalsVisibleTo("UnityEditor.iOS.Extensions")]
 [assembly: InternalsVisibleTo("UnityEditor.VisionOS.Extensions")]
 [assembly: InternalsVisibleTo("UnityEditor.AppleTV.Extensions")]
@@ -60,6 +61,7 @@ using UnityEngine;
 [assembly: InternalsVisibleTo("UnityEditor.CloudRendering.Extensions")]
 [assembly: InternalsVisibleTo("UnityEditor.EmbeddedLinux.Extensions")]
 [assembly: InternalsVisibleTo("UnityEditor.QNX.Extensions")]
+[assembly: InternalsVisibleTo("UnityEditor.Kepler.Extensions")]
 [assembly: InternalsVisibleTo("UnityEditor.WindowsStandalone.Extensions")]
 [assembly: InternalsVisibleTo("UnityEditor.OSXStandalone.Extensions")]
 [assembly: InternalsVisibleTo("UnityEditor.Lumin.Extensions")]
@@ -141,6 +143,7 @@ using UnityEngine;
 [assembly: InternalsVisibleTo("Unity.Testing.VisualEffectGraph.EditorTests")]
 [assembly: InternalsVisibleTo("Unity.VisualEffectGraph.EditorTests")]
 [assembly: InternalsVisibleTo("Unity.RenderPipelines.Multiple_SRP.EditorTests")]
+[assembly: InternalsVisibleTo("Unity.ShaderGraph.Editor")]
 
 [assembly: InternalsVisibleTo("Unity.SceneTemplate.Editor")]
 [assembly: InternalsVisibleTo("com.unity.purchasing.udp.Editor")]

@@ -20,7 +20,6 @@ namespace UnityEditor.Search
         private int m_ViewId;
         private bool m_Disposed = false;
         private SearchViewState m_ViewState;
-        private Action m_AsyncRequestOff = null;
         private IResultView m_ResultView;
         internal IResultView resultView => m_ResultView;
         protected GroupedSearchList m_FilteredItems;
@@ -79,7 +78,7 @@ namespace UnityEditor.Search
 
                 var selectedItems = m_SearchItemSelection != null ? m_SearchItemSelection.ToArray() : Array.Empty<SearchItem>();
                 var newSelectedIndices = new int[selectedItems.Length];
-                
+
                 viewState.group = value;
                 m_FilteredItems.currentGroup = value;
                 resultView?.OnGroupChanged(prevGroup, value);
@@ -124,7 +123,7 @@ namespace UnityEditor.Search
         public int totalCount => m_FilteredItems.TotalCount;
 
         public IEnumerable<SearchItem> items => m_FilteredItems;
-        public bool searchInProgress => context.searchInProgress || m_AsyncRequestOff != null;
+        public bool searchInProgress => context.searchInProgress;
 
         public SearchView(SearchViewState viewState, int viewId)
         {
@@ -141,8 +140,6 @@ namespace UnityEditor.Search
                 viewState.itemSize = viewState.itemSize == 0 ? GetDefaultItemSize() : viewState.itemSize;
                 hideHelpers = m_ViewState.HasFlag(SearchViewFlags.DisableQueryHelpers);
                 style.flexGrow = 1f;
-
-                Refresh();
                 UpdateView();
 
                 RegisterCallback<GeometryChangedEvent>(OnGeometryChanged);
@@ -160,6 +157,7 @@ namespace UnityEditor.Search
                 m_FilteredItems?.Dispose();
                 m_FilteredItems = new GroupedSearchList(context, GetDefaultSearchListComparer());
                 m_FilteredItems.currentGroup = viewState.group;
+                m_ResultView?.OnItemSourceChanged(m_FilteredItems);
             }
         }
 
@@ -179,26 +177,16 @@ namespace UnityEditor.Search
             }
             else
             {
-                m_AsyncRequestOff?.Invoke();
-                m_AsyncRequestOff = Utils.CallDelayed(AsyncRefresh, SearchSettings.debounceMs / 1000d);
-            }
-        }
-
-        private void AsyncRefresh()
-        {
-            using (new EditorPerformanceTracker("SearchView.AsyncRefresh"))
-            {
-                if (m_SyncSearch)
-                    NotifySyncSearch(currentGroup, UnityEditor.SearchService.SearchService.SyncSearchEvent.SyncSearch);
-
                 FetchItems();
             }
         }
 
         public void FetchItems()
         {
-            m_AsyncRequestOff?.Invoke();
-            m_AsyncRequestOff = null;
+            using var tracker = new EditorPerformanceTracker("SearchView.FetchItems");
+
+            if (m_SyncSearch)
+                NotifySyncSearch(currentGroup, UnityEditor.SearchService.SearchService.SyncSearchEvent.SyncSearch);
 
             context.ClearErrors();
             m_FilteredItems.Clear();
@@ -229,8 +217,6 @@ namespace UnityEditor.Search
             if (disposing)
             {
                 AssetPreview.DeletePreviewTextureManagerByID(m_ViewId);
-                m_AsyncRequestOff?.Invoke();
-                m_AsyncRequestOff = null;
                 m_ViewState.context?.Dispose();
             }
 
@@ -249,11 +235,7 @@ namespace UnityEditor.Search
 
         private void SetItemSize(float value)
         {
-            var previousDisplayModeIsList = false;
-            if (viewState.itemSize > (float)DisplayMode.Compact && viewState.itemSize <= (float)DisplayMode.List)
-                previousDisplayModeIsList = true;
-
-            if (previousDisplayModeIsList && value > (float)DisplayMode.Compact && value <= (float)DisplayMode.List)
+            if (viewState.itemSize == value)
                 return;
 
             viewState.itemSize = value;
@@ -394,6 +376,8 @@ namespace UnityEditor.Search
 
             if (m_ViewState.filterHandler != null)
                 items = items.Where(item => m_ViewState.filterHandler(item));
+
+            // TODO Table Performance: Adding here will sort items and do a lot of Group Manipulation. Can we make this faster? Sort only when the session is done?
             m_FilteredItems.AddItems(items);
             if (m_FilteredItems.TotalCount != countBefore)
                 RefreshContent(RefreshFlags.ItemsChanged);
@@ -406,15 +390,14 @@ namespace UnityEditor.Search
         }
 
         private void UpdateSelectionFromIds()
-        {            
-            if (selection.SyncSelectionIfInvalid())
+        {
+            var selectionSynced = selection.SyncSelectionIfInvalid();
+            if (viewState.selectedIds.Length == 0 || selection.Count != 0)
             {
-                SetSelection(trackSelection: false, selection.indexes.ToArray());
+                if (selectionSynced)
+                    SetSelection(trackSelection: false, selection.indexes.ToArray());
                 return;
             }
-
-            if (viewState.selectedIds.Length == 0 || selection.Count != 0)
-                return;
 
             var indexesToSelect = new List<int>(viewState.selectedIds.Length);
             for (int index = 0; index < results.Count; index++)
@@ -597,12 +580,12 @@ namespace UnityEditor.Search
                 if (endSearch)
                     EditorApplication.delayCall -= DelayTrackSelection;
 
-                if (action.handler != null && items.Length == 1)
+                if (action?.handler != null && items.Length == 1)
                     action.handler(item);
-                else if (action.execute != null)
+                else if (action?.execute != null)
                     action.execute(items);
                 else
-                    action.handler?.Invoke(item);
+                    action?.handler?.Invoke(item);
             }
 
             var searchWindow = this.GetHostWindow() as SearchWindow;
@@ -740,7 +723,7 @@ namespace UnityEditor.Search
                     syncViewId = typeof(SceneSearchEngine).FullName;
                     break;
             }
-            UnityEditor.SearchService.SearchService.NotifySyncSearchChanged(evt, syncViewId, context.searchText);
+            UnityEditor.SearchService.SearchService.NotifySyncSearchChanged(evt, syncViewId, context.searchQuery);
         }
 
         public void SetupColumns(IList<SearchField> fields)

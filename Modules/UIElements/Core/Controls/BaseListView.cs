@@ -5,6 +5,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using Unity.Properties;
 using UnityEngine.Bindings;
@@ -34,6 +35,9 @@ namespace UnityEngine.UIElements
     /// <summary>
     /// Base class for a list view, a vertically scrollable area that links to, and displays, a list of items.
     /// </summary>
+    /// <remarks>
+    /// For the difference between IDs and indices, refer to <see cref="BaseVerticalCollectionView"/>.
+    /// </remarks>
     public abstract class BaseListView : BaseVerticalCollectionView
     {
         private static readonly string k_SizeFieldLabel = "Size";
@@ -56,6 +60,22 @@ namespace UnityEngine.UIElements
         [ExcludeFromDocs, Serializable]
         public new abstract class UxmlSerializedData : BaseVerticalCollectionView.UxmlSerializedData
         {
+            [Conditional("UNITY_EDITOR")]
+            public new static void Register()
+            {
+                UxmlDescriptionCache.RegisterType(typeof(UxmlSerializedData), new UxmlAttributeNames[]
+                {
+                    new (nameof(showFoldoutHeader), "show-foldout-header"),
+                    new (nameof(headerTitle), "header-title"),
+                    new (nameof(showAddRemoveFooter), "show-add-remove-footer"),
+                    new (nameof(allowAdd), "allow-add"),
+                    new (nameof(allowRemove), "allow-remove"),
+                    new (nameof(reorderMode), "reorder-mode"),
+                    new (nameof(showBoundCollectionSize), "show-bound-collection-size"),
+                    new (nameof(bindingSourceSelectionMode), "binding-source-selection-mode"),
+                });
+            }
+
             #pragma warning disable 649
             [SerializeField] bool showFoldoutHeader;
             [SerializeField, UxmlIgnore, HideInInspector] UxmlAttributeFlags showFoldoutHeader_UxmlAttributeFlags;
@@ -153,6 +173,10 @@ namespace UnityEngine.UIElements
                 m_PickingMode.defaultValue = PickingMode.Ignore;
             }
         }
+
+        // Custom index to ensure the fields are selected in the order they are displayed in the inspector. (UUM-32041)
+        const int k_FoldoutTabIndex = 10;
+        const int k_ArraySizeFieldTabIndex = 20;
 
         bool m_ShowBoundCollectionSize = true;
 
@@ -258,9 +282,8 @@ namespace UnityEngine.UIElements
                 return;
 
             m_Foldout = new Foldout() {name = foldoutHeaderUssClassName, text = m_HeaderTitle};
-
-            var foldoutToggle = m_Foldout.Q<Toggle>(className: Foldout.toggleUssClassName);
-            foldoutToggle.acceptClicksIfDisabled = true;
+            m_Foldout.toggle.tabIndex = k_FoldoutTabIndex;
+            m_Foldout.toggle.acceptClicksIfDisabled = true;
 
             m_Foldout.AddToClassList(foldoutHeaderUssClassName);
             hierarchy.Add(m_Foldout);
@@ -286,7 +309,7 @@ namespace UnityEngine.UIElements
 
             if (m_ArraySizeField == null)
             {
-                m_ArraySizeField = new TextField() { name = arraySizeFieldUssClassName };
+                m_ArraySizeField = new TextField() { name = arraySizeFieldUssClassName, tabIndex = k_ArraySizeFieldTabIndex };
                 m_ArraySizeField.AddToClassList(arraySizeFieldUssClassName);
                 m_ArraySizeField.RegisterValueChangedCallback(OnArraySizeFieldChanged);
                 m_ArraySizeField.isDelayed = true;
@@ -504,13 +527,13 @@ namespace UnityEngine.UIElements
                     m_Footer = new VisualElement() { name = footerUssClassName };
                     m_Footer.AddToClassList(footerUssClassName);
 
-                    m_RemoveButton = new Button(OnRemoveClicked) { name = footerRemoveButtonName, text = "-" };
-                    m_RemoveButton.SetEnabled(allowRemove);
-                    m_Footer.Add(m_RemoveButton);
-
                     m_AddButton = new Button(OnAddClicked) { name = footerAddButtonName, text = "+" };
                     m_AddButton.SetEnabled(allowAdd);
                     m_Footer.Add(m_AddButton);
+
+                    m_RemoveButton = new Button(OnRemoveClicked) { name = footerRemoveButtonName, text = "-" };
+                    m_RemoveButton.SetEnabled(allowRemove);
+                    m_Footer.Add(m_RemoveButton);
                 }
 
                 if (m_Foldout != null)
@@ -549,7 +572,33 @@ namespace UnityEngine.UIElements
 
         internal event Action itemsSourceSizeChanged;
 
-        BindingSourceSelectionMode m_BindingSourceSelectionMode;
+        private IVisualElementScheduledItem m_TrackedItem;
+
+        private IVisualElementScheduledItem trackItemCount
+        {
+            get
+            {
+                if (null != m_TrackedItem)
+                    return m_TrackedItem;
+
+                m_TrackedItem = schedule
+                    .Execute(trackCount)
+                    .Until(untilManualBindingSourceSelectionMode);
+                return m_TrackedItem;
+            }
+        }
+
+        private Action m_TrackCount;
+        private Action trackCount => m_TrackCount ??= () =>
+        {
+            if (itemsSource?.Count != m_PreviousRefreshedCount)
+                RefreshItems();
+        };
+
+        private Func<bool> m_WhileAutoAssign;
+        private Func<bool> untilManualBindingSourceSelectionMode => m_WhileAutoAssign ??= () => !autoAssignSource;
+
+        BindingSourceSelectionMode m_BindingSourceSelectionMode = BindingSourceSelectionMode.Manual;
 
         /// <summary>
         /// This property controls whether every element in the list will get its data source setup automatically to the
@@ -571,6 +620,9 @@ namespace UnityEngine.UIElements
                 m_BindingSourceSelectionMode = value;
                 Rebuild();
                 NotifyPropertyChanged(bindingSourceSelectionModeProperty);
+
+                if (autoAssignSource)
+                    trackItemCount.Resume();
             }
         }
 
@@ -916,7 +968,6 @@ namespace UnityEngine.UIElements
 
                 m_AllowAdd = value;
                 m_AddButton?.SetEnabled(m_AllowAdd);
-                RefreshItems();
                 NotifyPropertyChanged(allowAddProperty);
             }
         }
@@ -991,7 +1042,6 @@ namespace UnityEngine.UIElements
 
                 m_AllowRemove = value;
                 m_RemoveButton?.SetEnabled(allowRemove);
-                Rebuild();
                 NotifyPropertyChanged(allowRemoveProperty);
             }
         }
@@ -1190,11 +1240,8 @@ namespace UnityEngine.UIElements
         /// must all be set for the BaseListView to function properly.
         /// </summary>
         public BaseListView()
+            :this(null)
         {
-            AddToClassList(ussClassName);
-            pickingMode = PickingMode.Ignore;
-            allowAdd = true;
-            allowRemove = true;
         }
 
         /// <summary>

@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using UnityEngine.UIElements;
 
@@ -14,6 +15,13 @@ namespace UnityEditor.PackageManager.UI.Internal
         [Serializable]
         public new class UxmlSerializedData : BaseTabView<PackageDetailsTabElement>.UxmlSerializedData
         {
+            [RegisterUxmlCache]
+            [Conditional("UNITY_EDITOR")]
+            public new static void Register()
+            {
+                BaseTabView<PackageDetailsTabElement>.UxmlSerializedData.Register();
+            }
+
             public override object CreateInstance() => new PackageDetailsTabView();
         }
 
@@ -36,6 +44,7 @@ namespace UnityEditor.PackageManager.UI.Internal
             m_TabHeaderContainer.name = "packageDetailsTabViewHeaderContainer";
             m_BodyContainer.name = "packageDetailsTabViewBodyContainer";
             m_TabHeaderDropdown.name = "packageDetailsTabViewHeaderDropdown";
+            m_TabHeaderDropdown.SetIcon(Icon.PullDown);
 
             m_EntitlementsErrorLabel = new Label(L10n.Tr("Information is unavailable because the package license isn't registered to your user account."));
             m_EntitlementsErrorLabel.AddClasses("packageTabsEntitlementsError");

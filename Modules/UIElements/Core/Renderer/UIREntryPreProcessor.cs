@@ -50,6 +50,12 @@ namespace UnityEngine.UIElements.UIR
             Debug.Assert(m_Mask.Count == 0);
         }
 
+        // Clear important references to prevent memory retention
+        public void ClearReferences()
+        {
+            m_FlattenedEntries.Clear();
+        }
+
         void DoEvaluate(Entry entry)
         {
             while (entry != null)
@@ -62,7 +68,7 @@ namespace UnityEngine.UIElements.UIR
                     case EntryType.DrawSolidMesh:
                     case EntryType.DrawTexturedMesh:
                     case EntryType.DrawTexturedMeshSkipAtlas:
-                    case EntryType.DrawSdfTextMesh:
+                    case EntryType.DrawTextMesh:
                     case EntryType.DrawGradients:
                         Debug.Assert(entry.vertices.Length <= UIRenderDevice.maxVerticesPerPage);
                         Add(entry.vertices.Length, entry.indices.Length);

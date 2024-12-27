@@ -33,13 +33,26 @@ namespace UnityEditor.Overlays
             AddToClassList(Overlay.ussClassName);
             style.position = Position.Absolute;
 
-            var root = this.Q("overlay-content");
-            root.renderHints = RenderHints.ClipWithScissors;
-            root.Add(overlay.GetSimpleHeader());
-            root.Add(overlay.CreatePanelContent());
+            Refresh();
 
             RegisterCallback<MouseEnterEvent>(evt => m_CursorIsOverPopup = true);
             RegisterCallback<MouseLeaveEvent>(evt => m_CursorIsOverPopup = false);
+        }
+
+        public void Refresh()
+        {
+            var root = this.Q("overlay-content");
+
+            root.Clear();
+
+            root.renderHints = RenderHints.ClipWithScissors;
+            style.maxHeight = StyleKeyword.Initial;
+            style.maxWidth = StyleKeyword.Initial;
+
+            root.Add(overlay.GetSimpleHeader());
+            root.Add(overlay.CreatePanelContent());
+
+            root.Focus();
         }
 
         public static OverlayPopup CreateUnderOverlay(Overlay overlay)
@@ -59,10 +72,22 @@ namespace UnityEditor.Overlays
                 if (!overlay.isInToolbar)
                     popup.EnableInClassList(k_OutsideToolbar, true);
 
-                var overlayWorldBound = overlay.rootVisualElement.worldBound;
+                var marginLeft = overlay.resizeTarget.resolvedStyle.marginLeft;
+                var marginRight = overlay.resizeTarget.resolvedStyle.marginRight;
+                var marginBottom = overlay.resizeTarget.resolvedStyle.marginBottom;
+                var marginTop = overlay.resizeTarget.resolvedStyle.marginTop;
+
+                var overlayWorldBound = overlay.resizeTarget.worldBound;
+
+                overlayWorldBound.width += marginLeft + marginRight;
+                overlayWorldBound.height += marginTop + marginBottom;
+                overlayWorldBound.x -= marginLeft;
+                overlayWorldBound.y -= marginTop;
+
                 var placement = OverlayCanvas.ClampRectToBounds(overlay.canvas.windowRoot.worldBound, proposed);
                 popup.HandleGeometryChangedEvent(overlay.canvas, placement, overlayWorldBound);
             });
+
             return popup;
         }
 

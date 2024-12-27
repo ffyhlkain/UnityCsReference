@@ -4,12 +4,13 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using Unity.Properties;
 
 namespace UnityEngine.UIElements
 {
     /// <summary>
-    /// A list view with multi column support.
+    /// A list view with multi column support. For more information, refer to [[wiki:UIE-uxml-element-MultiColumnListView|MultiColumnListView]].
     /// </summary>
     public class MultiColumnListView : BaseListView
     {
@@ -20,6 +21,18 @@ namespace UnityEngine.UIElements
         [UnityEngine.Internal.ExcludeFromDocs, Serializable]
         public new class UxmlSerializedData : BaseListView.UxmlSerializedData
         {
+            [Conditional("UNITY_EDITOR")]
+            public new static void Register()
+            {
+                UxmlDescriptionCache.RegisterType(typeof(UxmlSerializedData), new UxmlAttributeNames[]
+                {
+                    new (nameof(sortingEnabled), "sorting-enabled"),
+                    new (nameof(sortingMode), "sorting-mode"),
+                    new (nameof(columns), "columns"),
+                    new (nameof(sortColumnDescriptions), "sort-column-descriptions"),
+                });
+            }
+
             #pragma warning disable 649
             [SerializeField, HideInInspector] bool sortingEnabled;
             [SerializeField, UxmlIgnore, HideInInspector] UxmlAttributeFlags sortingEnabled_UxmlAttributeFlags;

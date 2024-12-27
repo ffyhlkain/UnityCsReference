@@ -375,12 +375,23 @@ namespace UnityEditor.Search
             // Do nothing
         }
 
+        void IResultView.OnItemSourceChanged(ISearchList itemSource)
+        {
+            if (m_GridView != null)
+                m_GridView.itemsSource = (IList)itemSource;
+        }
+
         private void UpdateView()
         {
             m_GridView.fixedItemHeight = m_ViewModel.itemIconSize + m_LabelHeight;
             m_GridView.fixedItemWidth = m_ViewModel.itemIconSize;
             m_GridView.ComputeGridSize();
             m_GridView.RefreshItems();
+        }
+
+        void IResultView.UpdateView()
+        {
+            UpdateView();
         }
 
         void IResultView.AddSaveQueryMenuItems(SearchContext context, GenericMenu menu)

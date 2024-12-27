@@ -151,7 +151,7 @@ namespace UnityEditor.Modules
 
     internal interface IBuildPostprocessor
     {
-        void LaunchPlayer(BuildLaunchPlayerArgs args);
+        ILaunchReport LaunchPlayer(BuildLaunchPlayerArgs args);
 
         void PostProcess(BuildPostProcessArgs args, out BuildProperties outProperties);
 
@@ -191,16 +191,6 @@ namespace UnityEditor.Modules
     {
         public virtual ScriptingImplementation[] Supported()
         {
-            if (Unsupported.IsSourceBuild())  // CORECLR_FIXME remove sourcebuild
-            {
-                return new[]
-                {
-                    ScriptingImplementation.Mono2x,
-                    ScriptingImplementation.IL2CPP,
-                    #pragma warning disable 618
-                    ScriptingImplementation.CoreCLR
-                };
-            }
             return new[]
             {
                 ScriptingImplementation.Mono2x,
@@ -224,6 +214,14 @@ namespace UnityEditor.Modules
     internal interface ISettingEditorExtension
     {
         void OnEnable(PlayerSettingsEditor settingsEditor);
+
+        void ConfigurePlatformProfile(SerializedObject serializedProfile);
+
+        bool CopyProjectSettingsPlayerSettingsToBuildProfile();
+
+        bool IsPlayerSettingsDataEqualToProjectSettings();
+
+        void OnActiveProfileChanged(BuildProfile previous, BuildProfile newProfile);
 
         bool HasPublishSection();
 
@@ -357,6 +355,24 @@ namespace UnityEditor.Modules
         void ShowImportSettings(BaseTextureImportPlatformSettings editor);
     }
 
+    /// <summary>
+    /// Describes a setting variant and if it should be selected in the UI initially.
+    /// </summary>
+    [VisibleToOtherModules("UnityEditor.BuildProfileModule")]
+    internal class PreconfiguredSettingsVariant
+    {
+        public string Name { get; }
+        public bool SelectedInitially { get; }
+        public bool Selected { get; set; }
+
+        public PreconfiguredSettingsVariant(string name, bool selectedInitially)
+        {
+            Name = name;
+            SelectedInitially = selectedInitially;
+            Selected = selectedInitially;
+        }
+    }
+
     // Interface for implementing platform specific setting in Build Profiles window.
     [VisibleToOtherModules("UnityEditor.BuildProfileModule")]
     internal interface IBuildProfileExtension
@@ -385,6 +401,23 @@ namespace UnityEditor.Modules
             BuildProfileWorkflowState state);
 
         /// <summary>
+        /// When editing a build profile asset, this method is invoked to render the
+        /// warning help boxes for build related issues.
+        /// </summary>
+        /// <param name="serializedObject">
+        /// Target Build Profile serialized object .
+        /// </param>
+        /// <param name="rootProperty">
+        /// Property instance for <see cref="BuildProfile.platformBuildProfile"/>.
+        /// </param>
+        /// <returns>
+        /// Root visual element for the platform specific warnings.
+        /// </returns>
+        VisualElement CreatePlatformBuildWarningsGUI(
+            SerializedObject serializedObject,
+            SerializedProperty rootProperty);
+
+        /// <summary>
         /// Copy settings to the platform settings base we are passing. This is used, for example, when creating
         /// a new classic profile and we need to copy settings - that live in the managed side only - to it
         /// </summary>
@@ -394,6 +427,26 @@ namespace UnityEditor.Modules
         /// Copy platform settings from build profile to platform specific setting asset.
         /// </summary>
         void CopyPlatformSettingsFromBuildProfile(BuildProfilePlatformSettingsBase platformSettings);
+
+        /// <summary>
+        /// The info message paired with the create build profile button.
+        /// If platform does not override this message, TrText.sharedSettingsInfo will be used.
+        /// </summary>
+        /// <returns>
+        /// Message to be displayed.
+        /// </returns>
+        string GetProfileInfoMessage();
+
+        /// <summary>
+        /// Provides the list of preconfigured settings variants to display in the platform browser window
+        /// when creating a new build profile.
+        /// </summary>
+        PreconfiguredSettingsVariant[] GetPreconfiguredSettingsVariants();
+
+        /// <summary>
+        /// Gets called when a build profile is created from defaults or by duplication from a classic profile.
+        /// </summary>
+        void OnBuildProfileCreated(BuildProfile buildProfile, int preconfiguredSettingsVariant);
 
         void OnDisable();
     }
@@ -491,6 +544,9 @@ namespace UnityEditor.Modules
 
         // Returns an array of defines that should be used when compiling scripts
         IEnumerable<string> GetAdditionalDefines();
+
+        // Returns an array of defines that should be used when compiling scripts for the editor
+        IEnumerable<string> GetAdditionalEditorDefines();
 
         // Returns an array of C# source files that should be included into the assembly when compiling scripts
         IEnumerable<string> GetAdditionalSourceFiles();

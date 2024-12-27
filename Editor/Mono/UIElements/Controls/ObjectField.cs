@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using Unity.Properties;
 using UnityEngine;
 using UnityEngine.Bindings;
@@ -32,6 +33,17 @@ namespace UnityEditor.UIElements
         [UnityEngine.Internal.ExcludeFromDocs, Serializable]
         public new class UxmlSerializedData : BaseField<Object>.UxmlSerializedData
         {
+            [Conditional("UNITY_EDITOR")]
+            public new static void Register()
+            {
+                BaseField<Object>.UxmlSerializedData.Register();
+                UxmlDescriptionCache.RegisterType(typeof(UxmlSerializedData), new UxmlAttributeNames[]
+                {
+                    new (nameof(allowSceneObjects), "allow-scene-objects"),
+                    new (nameof(objectType), "type", typeof(Object)),
+                });
+            }
+
             #pragma warning disable 649
             [SerializeField] bool allowSceneObjects;
             [SerializeField, UxmlIgnore, HideInInspector] UxmlAttributeFlags allowSceneObjects_UxmlAttributeFlags;
@@ -82,6 +94,14 @@ namespace UnityEditor.UIElements
                 ((ObjectField)ve).allowSceneObjects = m_AllowSceneObjects.GetValueFromBag(bag, cc);
                 ((ObjectField)ve).objectType = m_ObjectType.GetValueFromBag(bag, cc);
             }
+        }
+
+        internal override bool EqualsCurrentValue(Object value)
+        {
+            // If the current value is a missing object reference then we allow anything to be set, even null which is technically the same value here.
+            if (m_ObjectFieldDisplay.isObjectMissing)
+                return false;
+            return base.EqualsCurrentValue(value);
         }
 
         public override void SetValueWithoutNotify(Object newValue)
@@ -151,6 +171,8 @@ namespace UnityEditor.UIElements
             UpdateMixedValueContent();
         }
 
+        internal static bool IsMissingObjectReference(SerializedProperty p) => p.propertyType == SerializedPropertyType.ObjectReference && p.objectReferenceInstanceIDValue != 0 && p.objectReferenceValue == null;
+
         [VisibleToOtherModules("UnityEditor.UIBuilderModule")]
         internal class ObjectFieldDisplay : VisualElement
         {
@@ -158,9 +180,12 @@ namespace UnityEditor.UIElements
             private readonly Image m_ObjectIcon;
             private readonly Label m_ObjectLabel;
 
+            public bool isObjectMissing { get; private set; }
+
             static readonly string ussClassName = "unity-object-field-display";
             static readonly string iconUssClassName = ussClassName + "__icon";
             internal static readonly string labelUssClassName = ussClassName + "__label";
+            internal static readonly string nullLabelUssClassName = labelUssClassName + "--value-null";
             static readonly string acceptDropVariantUssClassName = ussClassName + "--accept-drop";
 
             internal void ShowMixedValue(bool show)
@@ -195,21 +220,24 @@ namespace UnityEditor.UIElements
 
             public void Update()
             {
-                // While building editor resources ObjectField are instantiated to serialize default values in
-                // the Uxml asset. If EditorGUIUtility.ObjectContent is called during that time the editor will crash.
-                if (Application.isBuildingEditorResources)
-                    return;
+                isObjectMissing = false;
 
                 var property = m_ObjectField.GetProperty(serializedPropertyKey) as SerializedProperty;
                 // UUM-53334, need to check if property is still valid before updating
-                if (property != null && !property.isValid)
+                if (property != null)
                 {
-                    m_ObjectField.SetProperty(serializedPropertyKey, null);
-                    return;
+                    if (!property.isValid)
+                    {
+                        m_ObjectField.SetProperty(serializedPropertyKey, null);
+                        return;
+                    }
+                    isObjectMissing = IsMissingObjectReference(property);
                 }
+
                 var content = EditorGUIUtility.ObjectContent(m_ObjectField.value, m_ObjectField.objectType, property);
                 m_ObjectIcon.image = content.image;
                 m_ObjectLabel.text = content.text;
+                m_ObjectLabel.EnableInClassList(nullLabelUssClassName, m_ObjectField.value == null);
             }
 
             [EventInterest(typeof(MouseDownEvent), typeof(KeyDownEvent),
